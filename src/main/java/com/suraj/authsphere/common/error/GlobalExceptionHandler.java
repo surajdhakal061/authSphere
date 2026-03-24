@@ -2,6 +2,7 @@ package com.suraj.authsphere.common.error;
 
 import com.suraj.authsphere.common.exception.AccountLockedException;
 import com.suraj.authsphere.common.exception.BadRequestException;
+import com.suraj.authsphere.common.exception.TooManyRequestsException;
 import com.suraj.authsphere.common.exception.UnauthorizedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -31,6 +32,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccountLockedException.class)
     ResponseEntity<ApiError> handleAccountLocked(AccountLockedException ex, HttpServletRequest request) {
         return build(HttpStatus.LOCKED, "AUTH-423", ex.getMessage(), List.of(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ApiError> handleTooManyRequests(TooManyRequestsException ex, HttpServletRequest request) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, "AUTH-429", ex.getMessage(), List.of(), request.getRequestURI());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

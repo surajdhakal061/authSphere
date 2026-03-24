@@ -1,6 +1,7 @@
 package com.suraj.authsphere.auth.service;
 
 import com.suraj.authsphere.auth.config.JwtProperties;
+import com.suraj.authsphere.auth.config.AuthRateLimitProperties;
 import com.suraj.authsphere.auth.domain.UserAccount;
 import com.suraj.authsphere.auth.domain.UserSession;
 import com.suraj.authsphere.auth.domain.UserStatus;
@@ -17,6 +18,7 @@ import com.suraj.authsphere.auth.security.JwtTokenService;
 import com.suraj.authsphere.auth.security.JwtTokenService.RefreshTokenClaims;
 import com.suraj.authsphere.common.exception.AccountLockedException;
 import com.suraj.authsphere.common.exception.BadRequestException;
+import com.suraj.authsphere.common.exception.TooManyRequestsException;
 import com.suraj.authsphere.common.exception.UnauthorizedException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,19 +43,25 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final JwtProperties jwtProperties;
+    private final AuthRateLimiter authRateLimiter;
+    private final AuthRateLimitProperties authRateLimitProperties;
 
     public AuthService(
         UserAccountRepository userAccountRepository,
         UserSessionRepository userSessionRepository,
         PasswordEncoder passwordEncoder,
         JwtTokenService jwtTokenService,
-        JwtProperties jwtProperties
+        JwtProperties jwtProperties,
+        AuthRateLimiter authRateLimiter,
+        AuthRateLimitProperties authRateLimitProperties
     ) {
         this.userAccountRepository = userAccountRepository;
         this.userSessionRepository = userSessionRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.jwtProperties = jwtProperties;
+        this.authRateLimiter = authRateLimiter;
+        this.authRateLimitProperties = authRateLimitProperties;
     }
 
     @Transactional
@@ -88,6 +96,8 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse login(LoginRequest request, ClientContext clientContext) {
+        assertRateLimit("login", clientContext.ipAddress(), authRateLimitProperties.loginMaxPerMinute());
+
         UserAccount user = userAccountRepository
             .findByEmailIgnoreCase(normalizeEmail(request.email()))
             .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
@@ -113,6 +123,8 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse refresh(RefreshTokenRequest request, ClientContext clientContext) {
+        assertRateLimit("refresh", clientContext.ipAddress(), authRateLimitProperties.refreshMaxPerMinute());
+
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
 
@@ -206,6 +218,11 @@ public class AuthService {
         return new ApiMessageResponse("Session revoked successfully");
     }
 
+    @Transactional
+    public ApiMessageResponse revokeSession(String refreshToken, UUID sessionId) {
+        return revokeSession(new RevokeSessionRequest(refreshToken, sessionId));
+    }
+
     private void validateAccountState(UserAccount user) {
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
             throw new AccountLockedException("Account temporarily locked due to failed login attempts");
@@ -291,6 +308,12 @@ public class AuthService {
             return fallback;
         }
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    private void assertRateLimit(String scope, String key, int limitPerMinute) {
+        if (!authRateLimiter.allow(scope, key, limitPerMinute)) {
+            throw new TooManyRequestsException("Too many requests. Please try again later.");
+        }
     }
 }
 

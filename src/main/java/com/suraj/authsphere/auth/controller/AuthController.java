@@ -15,8 +15,11 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,9 +65,22 @@ public class AuthController {
         return authService.listActiveSessions(request);
     }
 
+    @GetMapping("/sessions")
+    public List<SessionSummaryResponse> listActiveSessions(@RequestHeader("X-Refresh-Token") String refreshToken) {
+        return authService.listActiveSessions(new RefreshTokenRequest(refreshToken));
+    }
+
     @PostMapping("/sessions/revoke")
     public ApiMessageResponse revokeSession(@Valid @RequestBody RevokeSessionRequest request) {
         return authService.revokeSession(request);
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public ApiMessageResponse revokeSession(
+        @PathVariable("sessionId") java.util.UUID sessionId,
+        @RequestHeader("X-Refresh-Token") String refreshToken
+    ) {
+        return authService.revokeSession(refreshToken, sessionId);
     }
 
     @GetMapping("/health")
