@@ -29,6 +29,15 @@ public class UserSession {
     @Column(name = "refresh_token_hash", nullable = false, length = 128)
     private String refreshTokenHash;
 
+    @Column(name = "device_name", length = 120)
+    private String deviceName;
+
+    @Column(name = "ip_address", length = 64)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 255)
+    private String userAgent;
+
     @Column(name = "issued_at", nullable = false)
     private Instant issuedAt;
 
@@ -40,6 +49,9 @@ public class UserSession {
 
     @Column(name = "revoke_reason", length = 64)
     private String revokeReason;
+
+    @Column(name = "last_seen_at", nullable = false)
+    private Instant lastSeenAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
