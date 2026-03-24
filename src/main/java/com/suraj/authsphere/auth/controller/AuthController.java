@@ -1,6 +1,8 @@
 package com.suraj.authsphere.auth.controller;
 
+import com.suraj.authsphere.auth.dto.ApiMessageResponse;
 import com.suraj.authsphere.auth.dto.LoginRequest;
+import com.suraj.authsphere.auth.dto.RefreshTokenRequest;
 import com.suraj.authsphere.auth.dto.RegisterRequest;
 import com.suraj.authsphere.auth.dto.TokenPairResponse;
 import com.suraj.authsphere.auth.service.AuthService;
@@ -32,6 +34,21 @@ public class AuthController {
     @PostMapping("/login")
     public TokenPairResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/refresh")
+    public TokenPairResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return authService.refresh(request);
+    }
+
+    @PostMapping("/logout")
+    public ApiMessageResponse logout(@Valid @RequestBody RefreshTokenRequest request) {
+        return authService.logout(request);
+    }
+
+    @PostMapping("/logout-all")
+    public ApiMessageResponse logoutAll(@Valid @RequestBody RefreshTokenRequest request) {
+        return authService.logoutAll(request);
     }
 
     @GetMapping("/health")
