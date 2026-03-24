@@ -7,7 +7,9 @@ import com.suraj.authsphere.auth.domain.UserStatus;
 import com.suraj.authsphere.auth.dto.ApiMessageResponse;
 import com.suraj.authsphere.auth.dto.LoginRequest;
 import com.suraj.authsphere.auth.dto.RefreshTokenRequest;
+import com.suraj.authsphere.auth.dto.RevokeSessionRequest;
 import com.suraj.authsphere.auth.dto.RegisterRequest;
+import com.suraj.authsphere.auth.dto.SessionSummaryResponse;
 import com.suraj.authsphere.auth.dto.TokenPairResponse;
 import com.suraj.authsphere.auth.repository.UserAccountRepository;
 import com.suraj.authsphere.auth.repository.UserSessionRepository;
@@ -22,6 +24,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,6 +58,11 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse register(RegisterRequest request) {
+        return register(request, ClientContext.unknown());
+    }
+
+    @Transactional
+    public TokenPairResponse register(RegisterRequest request, ClientContext clientContext) {
         String normalizedEmail = normalizeEmail(request.email());
         if (userAccountRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new BadRequestException("Email already registered");
@@ -70,11 +78,16 @@ public class AuthService {
         user.setTokenVersion(1);
 
         userAccountRepository.save(user);
-        return generateTokenPair(user);
+        return generateTokenPair(user, clientContext);
     }
 
     @Transactional
     public TokenPairResponse login(LoginRequest request) {
+        return login(request, ClientContext.unknown());
+    }
+
+    @Transactional
+    public TokenPairResponse login(LoginRequest request, ClientContext clientContext) {
         UserAccount user = userAccountRepository
             .findByEmailIgnoreCase(normalizeEmail(request.email()))
             .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
@@ -90,20 +103,18 @@ public class AuthService {
         user.setLockedUntil(null);
         userAccountRepository.save(user);
 
-        return generateTokenPair(user);
+        return generateTokenPair(user, clientContext);
     }
 
     @Transactional
     public TokenPairResponse refresh(RefreshTokenRequest request) {
+        return refresh(request, ClientContext.unknown());
+    }
+
+    @Transactional
+    public TokenPairResponse refresh(RefreshTokenRequest request, ClientContext clientContext) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
-
-        UserAccount user = userAccountRepository
-            .findById(claims.userId())
-            .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
-
-        if (!claims.tokenVersion().equals(user.getTokenVersion())) {
-            throw new UnauthorizedException("Refresh token is no longer valid");
-        }
+        UserAccount user = resolveRefreshUser(claims);
 
         UserSession activeSession = userSessionRepository
             .findByRefreshTokenJti(claims.jti())
@@ -119,9 +130,10 @@ public class AuthService {
 
         activeSession.setRevokedAt(Instant.now());
         activeSession.setRevokeReason("ROTATED");
+        activeSession.setLastSeenAt(Instant.now());
         userSessionRepository.save(activeSession);
 
-        return generateTokenPair(user);
+        return generateTokenPair(user, clientContext);
     }
 
     @Transactional
@@ -140,10 +152,7 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse logoutAll(RefreshTokenRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
-
-        UserAccount user = userAccountRepository
-            .findById(claims.userId())
-            .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+        UserAccount user = resolveRefreshUser(claims);
 
         user.setTokenVersion(user.getTokenVersion() + 1);
         userAccountRepository.save(user);
@@ -155,6 +164,46 @@ public class AuthService {
         }
 
         return new ApiMessageResponse("Logged out from all devices");
+    }
+
+    @Transactional(readOnly = true)
+    public List<SessionSummaryResponse> listActiveSessions(RefreshTokenRequest request) {
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        UserAccount user = resolveRefreshUser(claims);
+
+        return userSessionRepository
+            .findByUserIdAndRevokedAtIsNullAndExpiresAtAfter(user.getId(), Instant.now())
+            .stream()
+            .map(session -> new SessionSummaryResponse(
+                session.getId(),
+                session.getDeviceName(),
+                session.getIpAddress(),
+                session.getUserAgent(),
+                session.getIssuedAt(),
+                session.getExpiresAt(),
+                claims.jti().equals(session.getRefreshTokenJti())
+            ))
+            .toList();
+    }
+
+    @Transactional
+    public ApiMessageResponse revokeSession(RevokeSessionRequest request) {
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        UserAccount user = resolveRefreshUser(claims);
+
+        UserSession session = userSessionRepository
+            .findByIdAndUserId(request.sessionId(), user.getId())
+            .orElseThrow(() -> new BadRequestException("Session not found"));
+
+        if (session.getRevokedAt() != null || session.getExpiresAt().isBefore(Instant.now())) {
+            return new ApiMessageResponse("Session is already inactive");
+        }
+
+        session.setRevokedAt(Instant.now());
+        session.setRevokeReason("MANUAL_REVOKE");
+        session.setLastSeenAt(Instant.now());
+        userSessionRepository.save(session);
+        return new ApiMessageResponse("Session revoked successfully");
     }
 
     private void validateAccountState(UserAccount user) {
@@ -180,10 +229,10 @@ public class AuthService {
         userAccountRepository.save(user);
     }
 
-    private TokenPairResponse generateTokenPair(UserAccount user) {
+    private TokenPairResponse generateTokenPair(UserAccount user, ClientContext clientContext) {
         String accessToken = jwtTokenService.generateAccessToken(user);
         String refreshToken = jwtTokenService.generateRefreshToken(user);
-        persistSession(user.getId(), refreshToken);
+        persistSession(user.getId(), refreshToken, clientContext);
 
         return new TokenPairResponse(
             accessToken,
@@ -193,18 +242,34 @@ public class AuthService {
         );
     }
 
-    private void persistSession(UUID userId, String refreshToken) {
+    private void persistSession(UUID userId, String refreshToken, ClientContext clientContext) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(refreshToken);
 
+        Instant now = Instant.now();
         UserSession session = new UserSession();
         session.setId(UUID.randomUUID());
         session.setUserId(userId);
         session.setRefreshTokenJti(claims.jti());
         session.setRefreshTokenHash(hashToken(refreshToken));
-        session.setIssuedAt(Instant.now());
+        session.setDeviceName(sanitize(clientContext.deviceName(), 120, "unknown-device"));
+        session.setIpAddress(sanitize(clientContext.ipAddress(), 64, "unknown"));
+        session.setUserAgent(sanitize(clientContext.userAgent(), 255, "unknown"));
+        session.setIssuedAt(now);
         session.setExpiresAt(claims.expiresAt());
+        session.setLastSeenAt(now);
 
         userSessionRepository.save(session);
+    }
+
+    private UserAccount resolveRefreshUser(RefreshTokenClaims claims) {
+        UserAccount user = userAccountRepository
+            .findById(claims.userId())
+            .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+
+        if (!claims.tokenVersion().equals(user.getTokenVersion())) {
+            throw new UnauthorizedException("Refresh token is no longer valid");
+        }
+        return user;
     }
 
     private String normalizeEmail(String email) {
@@ -219,6 +284,13 @@ public class AuthService {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
         }
+    }
+
+    private String sanitize(String value, int maxLength, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 }
 
