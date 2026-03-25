@@ -30,7 +30,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -45,7 +44,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Logger LOG = LoggerFactory.getLogger(AuthService.class);
 
@@ -60,6 +58,7 @@ public class AuthService {
     private final VerificationEmailService verificationEmailService;
     private final AuthRateLimiter authRateLimiter;
     private final AuthRateLimitProperties authRateLimitProperties;
+    private final FailedLoginAttemptService failedLoginAttemptService;
 
     public AuthService(
             UserAccountRepository userAccountRepository,
@@ -72,7 +71,8 @@ public class AuthService {
             EmailVerificationTokenProperties emailVerificationTokenProperties,
             VerificationEmailService verificationEmailService,
             AuthRateLimiter authRateLimiter,
-            AuthRateLimitProperties authRateLimitProperties
+            AuthRateLimitProperties authRateLimitProperties,
+            FailedLoginAttemptService failedLoginAttemptService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.userSessionRepository = userSessionRepository;
@@ -85,6 +85,7 @@ public class AuthService {
         this.verificationEmailService = verificationEmailService;
         this.authRateLimiter = authRateLimiter;
         this.authRateLimitProperties = authRateLimitProperties;
+        this.failedLoginAttemptService = failedLoginAttemptService;
     }
 
     @Transactional
@@ -105,7 +106,7 @@ public class AuthService {
         
         if(userAccountRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             LOG.warn("Register failed because email already exists email={}", normalizedEmail);
-            throw new BadRequestException("Email already registered");
+            throw new BadRequestException("Email already registered. Please use a different email or login to your existing account.");
         }
 
         UserAccount user = new UserAccount();
@@ -142,7 +143,7 @@ public class AuthService {
         validateAccountState(user);
 
         if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            registerFailedAttempt(user);
+            failedLoginAttemptService.registerFailedAttempt(user.getId());
             LOG.warn("Login failed due to invalid password userId={} email={}", user.getId(), normalizedEmail);
             throw new UnauthorizedException("Invalid email or password");
         }
@@ -422,7 +423,7 @@ public class AuthService {
     }
 
     private void validateAccountState(UserAccount user) {
-        if(user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
+        if(user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now()) && user.getStatus().equals(UserStatus.LOCKED)) {
             LOG.warn("Account is currently locked userId={} lockedUntil={}", user.getId(), user.getLockedUntil());
             throw new AccountLockedException("Account temporarily locked due to failed login attempts");
         }
@@ -438,23 +439,10 @@ public class AuthService {
         }
     }
 
-    private void registerFailedAttempt(UserAccount user) {
-        int nextAttempts = user.getFailedLoginCount() + 1;
-        user.setFailedLoginCount(nextAttempts);
-
-        if(nextAttempts >= MAX_FAILED_ATTEMPTS) {
-            user.setStatus(UserStatus.LOCKED);
-            user.setLockedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
-            user.setFailedLoginCount(0);
-            LOG.warn("Account locked after failed attempts userId={} lockMinutes=15", user.getId());
-        }
-
-        userAccountRepository.save(user);
-    }
 
     private TokenPairResponse generateTokenPair(UserAccount user, ClientContext clientContext) {
         String accessToken = jwtTokenService.generateAccessToken(user);
-        String refreshToken = jwtTokenService.generateRefreshToken(user);
+        String refreshToken = jwtTokenService.generateAccessToken(user);
         persistSession(user.getId(), refreshToken, clientContext);
 
         return new TokenPairResponse(
