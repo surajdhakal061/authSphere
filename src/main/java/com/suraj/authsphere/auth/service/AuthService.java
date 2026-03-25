@@ -91,7 +91,13 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse register(RegisterRequest request, ClientContext clientContext) {
-        String normalizedEmail = normalizeEmail(request.email());
+        String normalizedEmail = normalizeEmail(request.getEmail());
+        
+        // Validate that password and confirmPassword match
+        if(!request.getPassword().equals(request.getConfirmPassword())) {
+            throw new BadRequestException("Passwords do not match");
+        }
+        
         if(userAccountRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new BadRequestException("Email already registered");
         }
@@ -99,7 +105,7 @@ public class AuthService {
         UserAccount user = new UserAccount();
         user.setId(UUID.randomUUID());
         user.setEmail(normalizedEmail);
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setStatus(UserStatus.PENDING_VERIFICATION);
         user.setEmailVerified(false);
         user.setFailedLoginCount(0);
@@ -121,12 +127,12 @@ public class AuthService {
         assertRateLimit("login", clientContext.ipAddress(), authRateLimitProperties.loginMaxPerMinute());
 
         UserAccount user = userAccountRepository
-                .findByEmailIgnoreCase(normalizeEmail(request.email()))
+                .findByEmailIgnoreCase(normalizeEmail(request.getEmail()))
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
         validateAccountState(user);
 
-        if(!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             registerFailedAttempt(user);
             throw new UnauthorizedException("Invalid email or password");
         }

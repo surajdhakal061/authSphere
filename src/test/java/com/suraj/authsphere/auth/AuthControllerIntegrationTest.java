@@ -24,7 +24,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void registerAndLoginReturnsTokenPairs() {
-        TokenPairResponse registerResponse = authService.register(new RegisterRequest("user1@example.com", "Strong@123"));
+        TokenPairResponse registerResponse = authService.register(new RegisterRequest("user1@example.com", "Strong@123", "Strong@123"));
         TokenPairResponse loginResponse = authService.login(new LoginRequest("user1@example.com", "Strong@123"));
 
         assertThat(registerResponse.accessToken()).isNotBlank();
@@ -36,7 +36,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void refreshRotationInvalidatesOldRefreshToken() {
-        authService.register(new RegisterRequest("user2@example.com", "Strong@123"));
+        authService.register(new RegisterRequest("user2@example.com", "Strong@123", "Strong@123"));
         TokenPairResponse loginResponse = authService.login(new LoginRequest("user2@example.com", "Strong@123"));
 
         TokenPairResponse rotated = authService.refresh(new RefreshTokenRequest(loginResponse.refreshToken()));
@@ -51,7 +51,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void listSessionsAndRevokeSpecificSession() {
-        authService.register(new RegisterRequest("user3@example.com", "Strong@123"));
+        authService.register(new RegisterRequest("user3@example.com", "Strong@123", "Strong@123"));
         TokenPairResponse loginResponse = authService.login(new LoginRequest("user3@example.com", "Strong@123"));
 
         List<SessionSummaryResponse> sessions = authService.listActiveSessions(new RefreshTokenRequest(loginResponse.refreshToken()));

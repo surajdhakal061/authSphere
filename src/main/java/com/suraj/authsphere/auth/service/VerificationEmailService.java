@@ -6,7 +6,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -19,9 +18,9 @@ public class VerificationEmailService {
     private final EmailProperties emailProperties;
     private final JavaMailSender mailSender;
 
-    public VerificationEmailService(EmailProperties emailProperties, ObjectProvider<JavaMailSender> mailSenderProvider) {
+    public VerificationEmailService(EmailProperties emailProperties, JavaMailSender mailSenderProvider) {
         this.emailProperties = emailProperties;
-        this.mailSender = mailSenderProvider.getIfAvailable();
+        this.mailSender = mailSenderProvider;
     }
 
     public void sendVerificationEmail(String recipientEmail, String token) {
