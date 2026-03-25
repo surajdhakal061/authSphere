@@ -1,0 +1,676 @@
+{
+  "info": {
+    "name": "authSphere API",
+    "description": "Postman collection for AuthController and AuthorizationController endpoints. NOTE: Email verification is REQUIRED before login. After register, verify email before attempting login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "f7f791f9-8f93-4ed7-8fcf-2aa5261f1a5d"
+  },
+  "item": [
+    {
+      "name": "Auth Core",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Device-Name", "value": "Postman Desktop" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Device-Name", "value": "Postman Desktop" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/refresh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/logout"
+          }
+        },
+        {
+          "name": "Logout All",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/logout-all"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sessions",
+      "item": [
+        {
+          "name": "List Sessions (GET + Header)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Refresh-Token", "value": "{{refreshToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/sessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (Array.isArray(data) && data.length > 0 && data[0].sessionId) {",
+                  "    pm.collectionVariables.set('sessionId', data[0].sessionId);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Sessions (POST + Body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/sessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (Array.isArray(data) && data.length > 0 && data[0].sessionId) {",
+                  "    pm.collectionVariables.set('sessionId', data[0].sessionId);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke Session (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"sessionId\": \"{{sessionId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/sessions/revoke"
+          }
+        },
+        {
+          "name": "Revoke Session (DELETE)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Refresh-Token", "value": "{{refreshToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/sessions/{{sessionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Password and Email",
+      "item": [
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/reset-password"
+          }
+        },
+        {
+          "name": "Verify Email (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{verifyToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/verify-email"
+          }
+        },
+        {
+          "name": "Verify Email (GET)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/auth/verify-email?token={{verifyToken}}"
+          }
+        },
+        {
+          "name": "Resend Verification",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/resend-verification"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Biometric",
+      "item": [
+        {
+          "name": "Register Options",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Device-Name", "value": "Postman Biometric Device" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"credentialName\": \"MacBook Touch ID\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/biometric/register/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.challengeId) pm.collectionVariables.set('challengeId', data.challengeId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"challengeId\": \"{{challengeId}}\",\n  \"credentialId\": \"{{credentialId}}\",\n  \"publicKey\": \"sample-public-key\",\n  \"credentialName\": \"MacBook Touch ID\",\n  \"clientProof\": \"sample-client-proof\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/biometric/register/verify"
+          }
+        },
+        {
+          "name": "Login Options",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Device-Name", "value": "Postman Biometric Device" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/biometric/login/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.challengeId) pm.collectionVariables.set('challengeId', data.challengeId);",
+                  "  if (Array.isArray(data.credentialIds) && data.credentialIds.length > 0) {",
+                  "    pm.collectionVariables.set('credentialId', data.credentialIds[0]);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Device-Name", "value": "Postman Biometric Device" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"challengeId\": \"{{challengeId}}\",\n  \"credentialId\": \"{{credentialId}}\",\n  \"clientProof\": \"sample-client-proof\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/biometric/login/verify"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Credentials",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Refresh-Token", "value": "{{refreshToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/biometric/credentials"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (Array.isArray(data) && data.length > 0) {",
+                  "    if (data[0].id) pm.collectionVariables.set('credentialRecordId', data[0].id);",
+                  "    if (data[0].credentialId) pm.collectionVariables.set('credentialId', data[0].credentialId);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke Credential",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Refresh-Token", "value": "{{refreshToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/biometric/credentials/{{credentialRecordId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authorization Roles",
+      "item": [
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ROLE_SUPPORT\",\n  \"description\": \"Support operations role\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/roles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('roleId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/roles"
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ROLE_SUPPORT\",\n  \"description\": \"Updated support role\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/roles/{{roleId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authorization Permissions",
+      "item": [
+        {
+          "name": "Create Permission",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ticket.read\",\n  \"description\": \"Read support tickets\",\n  \"resource\": \"ticket\",\n  \"action\": \"read\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/permissions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 400) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('permissionId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Permission",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/permissions/{{permissionId}}"
+          }
+        },
+        {
+          "name": "List Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/permissions"
+          }
+        },
+        {
+          "name": "Update Permission",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ticket.read\",\n  \"description\": \"Read and review support tickets\",\n  \"resource\": \"ticket\",\n  \"action\": \"read\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/permissions/{{permissionId}}"
+          }
+        },
+        {
+          "name": "Delete Permission",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/permissions/{{permissionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Assignments",
+      "item": [
+        {
+          "name": "Assign Role To User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roleId\": \"{{roleId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/users/assign-role"
+          }
+        },
+        {
+          "name": "Remove Role From User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/users/{{userId}}/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "Assign Permission To Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"{{roleId}}\",\n  \"permissionId\": \"{{permissionId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/authorization/roles/assign-permission"
+          }
+        },
+        {
+          "name": "Remove Permission From Role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/roles/{{roleId}}/permissions/{{permissionId}}"
+          }
+        },
+        {
+          "name": "Get User Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/authorization/users/{{userId}}/permissions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Auth Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/auth/health"
+          }
+        },
+        {
+          "name": "Authorization Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/authorization/health"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "email", "value": "test@example.com" },
+    { "key": "password", "value": "SecurePass123!" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "userId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "roleId", "value": "" },
+    { "key": "permissionId", "value": "" },
+    { "key": "sessionId", "value": "" },
+    { "key": "verifyToken", "value": "any-token-for-testing" },
+    { "key": "resetToken", "value": "any-token-for-testing" },
+    { "key": "challengeId", "value": "" },
+    { "key": "credentialId", "value": "sample-credential-id" },
+    { "key": "credentialRecordId", "value": "" }
+  ]
+}
+

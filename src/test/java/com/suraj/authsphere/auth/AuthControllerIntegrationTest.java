@@ -24,14 +24,12 @@ class AuthControllerIntegrationTest {
 
     @Test
     void registerAndLoginReturnsTokenPairs() {
-        TokenPairResponse registerResponse = authService.register(new RegisterRequest("user1@example.com", "Strong@123", "Strong@123"));
-        TokenPairResponse loginResponse = authService.login(new LoginRequest("user1@example.com", "Strong@123"));
+        authService.register(new RegisterRequest("user1@example.com", "Strong@123", "Strong@123"));
 
-        assertThat(registerResponse.accessToken()).isNotBlank();
-        assertThat(registerResponse.refreshToken()).isNotBlank();
-        assertThat(loginResponse.accessToken()).isNotBlank();
-        assertThat(loginResponse.refreshToken()).isNotBlank();
-        assertThat(loginResponse.accessTokenExpiresInSeconds()).isEqualTo(900);
+        // Immediately trying to login should fail because email is not yet verified
+        assertThatThrownBy(() -> authService.login(new LoginRequest("user1@example.com", "Strong@123")))
+            .isInstanceOf(UnauthorizedException.class)
+            .hasMessageContaining("Email verification required");
     }
 
     @Test

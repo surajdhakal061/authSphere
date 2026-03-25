@@ -88,12 +88,12 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenPairResponse register(RegisterRequest request) {
+    public ApiMessageResponse register(RegisterRequest request) {
         return register(request, ClientContext.unknown());
     }
 
     @Transactional
-    public TokenPairResponse register(RegisterRequest request, ClientContext clientContext) {
+    public ApiMessageResponse register(RegisterRequest request, ClientContext clientContext) {
         String normalizedEmail = normalizeEmail(request.getEmail());
         LOG.info("Register attempt for email={} ip={}", normalizedEmail, clientContext.ipAddress());
         
@@ -121,7 +121,7 @@ public class AuthService {
         String verificationToken = issueEmailVerificationToken(user);
         verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
         LOG.info("User registered userId={} email={} status={}", user.getId(), normalizedEmail, user.getStatus());
-        return generateTokenPair(user, clientContext);
+        return new ApiMessageResponse("Registration successful. Please check your email to verify your account before logging in.");
     }
 
     @Transactional
@@ -165,7 +165,7 @@ public class AuthService {
         assertRateLimit("refresh", clientContext.ipAddress(), authRateLimitProperties.refreshMaxPerMinute());
         LOG.info("Refresh token attempt ip={}", clientContext.ipAddress());
 
-        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         UserAccount user = resolveRefreshUser(claims);
 
         UserSession activeSession = userSessionRepository
@@ -177,7 +177,7 @@ public class AuthService {
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
 
-        if(!hashToken(request.refreshToken()).equals(activeSession.getRefreshTokenHash())) {
+        if(!hashToken(request.getRefreshToken()).equals(activeSession.getRefreshTokenHash())) {
             LOG.warn("Refresh denied because refresh token hash mismatched sessionId={} userId={}", activeSession.getId(), user.getId());
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
@@ -193,7 +193,7 @@ public class AuthService {
 
     @Transactional
     public ApiMessageResponse logout(RefreshTokenRequest request) {
-        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         LOG.info("Logout requested userId={}", claims.userId());
         userSessionRepository
                 .findByRefreshTokenJti(claims.jti())
@@ -207,7 +207,7 @@ public class AuthService {
 
     @Transactional
     public ApiMessageResponse logoutAll(RefreshTokenRequest request) {
-        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         UserAccount user = resolveRefreshUser(claims);
         LOG.info("Logout-all requested userId={} currentTokenVersion={}", user.getId(), user.getTokenVersion());
 
@@ -226,7 +226,7 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public List<SessionSummaryResponse> listActiveSessions(RefreshTokenRequest request) {
-        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         UserAccount user = resolveRefreshUser(claims);
         LOG.debug("List active sessions requested userId={}", user.getId());
 
@@ -431,6 +431,11 @@ public class AuthService {
             LOG.warn("Account is disabled userId={}", user.getId());
             throw new UnauthorizedException("Account is disabled");
         }
+
+        if(!user.isEmailVerified()) {
+            LOG.warn("Login denied because email is not verified userId={} email={}", user.getId(), user.getEmail());
+            throw new UnauthorizedException("Email verification required. Please check your inbox for verification link.");
+        }
     }
 
     private void registerFailedAttempt(UserAccount user) {
@@ -546,5 +551,6 @@ public class AuthService {
         byte[] randomBytes = new byte[32];
         SECURE_RANDOM.nextBytes(randomBytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+        //withoutPadding() for removing trailing '==' which are not URL safe and not needed for url use case
     }
 }

@@ -24,6 +24,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -50,7 +52,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public TokenPairResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
+    public ApiMessageResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         return authService.register(request, toClientContext(httpRequest));
     }
 
@@ -91,7 +93,7 @@ public class AuthController {
 
     @DeleteMapping("/sessions/{sessionId}")
     public ApiMessageResponse revokeSession(
-        @PathVariable("sessionId") java.util.UUID sessionId,
+        @PathVariable("sessionId") UUID sessionId,
         @RequestHeader("X-Refresh-Token") String refreshToken
     ) {
         return authService.revokeSession(refreshToken, sessionId);
