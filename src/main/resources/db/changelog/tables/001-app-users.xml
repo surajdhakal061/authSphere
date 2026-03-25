@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="schema-001-create-app-users" author="authsphere">
+        <createTable tableName="app_users">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" primaryKeyName="pk_app_users" nullable="false"/>
+            </column>
+            <column name="email" type="VARCHAR(320)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_app_users_email"/>
+            </column>
+            <column name="password_hash" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="email_verified" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="failed_login_count" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locked_until" type="TIMESTAMP"/>
+            <column name="token_version" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="app_users" indexName="idx_app_users_email">
+            <column name="email"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
+

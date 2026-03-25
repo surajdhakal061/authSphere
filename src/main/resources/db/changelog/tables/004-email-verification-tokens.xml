@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="schema-004-create-email-verification-tokens" author="authsphere">
+        <createTable tableName="email_verification_tokens">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" primaryKeyName="pk_email_verification_tokens" nullable="false"/>
+            </column>
+            <column name="user_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="email" type="VARCHAR(320)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="token_hash" type="VARCHAR(128)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_email_verification_tokens_token_hash"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verified_at" type="TIMESTAMP"/>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="email_verification_tokens" indexName="idx_email_verification_tokens_user_id">
+            <column name="user_id"/>
+        </createIndex>
+
+        <createIndex tableName="email_verification_tokens" indexName="idx_email_verification_tokens_email">
+            <column name="email"/>
+        </createIndex>
+
+        <createIndex tableName="email_verification_tokens" indexName="idx_email_verification_tokens_expires_at">
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
+

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="schema-008-create-role-permissions" author="authsphere">
+        <createTable tableName="role_permissions">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" primaryKeyName="pk_role_permissions" nullable="false"/>
+            </column>
+            <column name="role_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="permission_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="assigned_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint tableName="role_permissions" columnNames="role_id, permission_id" constraintName="uk_role_permission"/>
+
+        <addForeignKeyConstraint
+            baseTableName="role_permissions"
+            baseColumnNames="role_id"
+            referencedTableName="roles"
+            referencedColumnNames="id"
+            constraintName="fk_role_permissions_role_id"
+            onDelete="CASCADE"/>
+
+        <addForeignKeyConstraint
+            baseTableName="role_permissions"
+            baseColumnNames="permission_id"
+            referencedTableName="permissions"
+            referencedColumnNames="id"
+            constraintName="fk_role_permissions_permission_id"
+            onDelete="CASCADE"/>
+
+        <createIndex tableName="role_permissions" indexName="idx_role_permissions_role_id">
+            <column name="role_id"/>
+        </createIndex>
+
+        <createIndex tableName="role_permissions" indexName="idx_role_permissions_permission_id">
+            <column name="permission_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
+

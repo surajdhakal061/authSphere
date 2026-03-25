@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="schema-002-create-user-sessions" author="authsphere">
+        <createTable tableName="user_sessions">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" primaryKeyName="pk_user_sessions" nullable="false"/>
+            </column>
+            <column name="user_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="refresh_token_jti" type="VARCHAR(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_user_sessions_refresh_token_jti"/>
+            </column>
+            <column name="refresh_token_hash" type="VARCHAR(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="device_name" type="VARCHAR(120)"/>
+            <column name="ip_address" type="VARCHAR(64)"/>
+            <column name="user_agent" type="VARCHAR(255)"/>
+            <column name="issued_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="revoked_at" type="TIMESTAMP"/>
+            <column name="revoke_reason" type="VARCHAR(64)"/>
+            <column name="last_seen_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="user_sessions" indexName="idx_user_sessions_user_id">
+            <column name="user_id"/>
+        </createIndex>
+
+        <createIndex tableName="user_sessions" indexName="idx_user_sessions_revoked_at">
+            <column name="revoked_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
+

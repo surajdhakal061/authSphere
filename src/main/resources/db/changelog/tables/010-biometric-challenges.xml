@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="schema-010-create-biometric-challenges" author="authsphere">
+        <createTable tableName="biometric_challenges">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" primaryKeyName="pk_biometric_challenges" nullable="false"/>
+            </column>
+            <column name="user_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="purpose" type="VARCHAR(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="challenge_value" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="used_at" type="TIMESTAMP"/>
+            <column name="credential_id_hint" type="VARCHAR(128)"/>
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint
+            baseTableName="biometric_challenges"
+            baseColumnNames="user_id"
+            referencedTableName="app_users"
+            referencedColumnNames="id"
+            constraintName="fk_biometric_challenges_user_id"
+            onDelete="CASCADE"/>
+
+        <createIndex tableName="biometric_challenges" indexName="idx_biometric_challenges_user_id">
+            <column name="user_id"/>
+        </createIndex>
+
+        <createIndex tableName="biometric_challenges" indexName="idx_biometric_challenges_expires_at">
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
+
