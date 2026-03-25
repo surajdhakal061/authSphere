@@ -1,12 +1,15 @@
 package com.suraj.authsphere.auth.controller;
 
 import com.suraj.authsphere.auth.dto.ApiMessageResponse;
+import com.suraj.authsphere.auth.dto.ForgotPasswordRequest;
 import com.suraj.authsphere.auth.dto.LoginRequest;
 import com.suraj.authsphere.auth.dto.RefreshTokenRequest;
+import com.suraj.authsphere.auth.dto.ResetPasswordRequest;
 import com.suraj.authsphere.auth.dto.RevokeSessionRequest;
 import com.suraj.authsphere.auth.dto.RegisterRequest;
 import com.suraj.authsphere.auth.dto.SessionSummaryResponse;
 import com.suraj.authsphere.auth.dto.TokenPairResponse;
+import com.suraj.authsphere.auth.dto.VerifyEmailRequest;
 import com.suraj.authsphere.auth.service.ClientContext;
 import com.suraj.authsphere.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -81,6 +84,26 @@ public class AuthController {
         @RequestHeader("X-Refresh-Token") String refreshToken
     ) {
         return authService.revokeSession(refreshToken, sessionId);
+    }
+
+    @PostMapping("/forgot-password")
+    public ApiMessageResponse forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        return authService.initiatePasswordReset(request.email());
+    }
+
+    @PostMapping("/reset-password")
+    public ApiMessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return authService.resetPassword(request.token(), request.newPassword());
+    }
+
+    @PostMapping("/verify-email")
+    public ApiMessageResponse verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        return authService.verifyEmail(request.token());
+    }
+
+    @PostMapping("/resend-verification")
+    public ApiMessageResponse resendVerification(@Valid @RequestBody ForgotPasswordRequest request) {
+        return authService.resendEmailVerification(request.email());
     }
 
     @GetMapping("/health")
