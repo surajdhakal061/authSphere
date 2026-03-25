@@ -149,6 +149,7 @@ public class AuthService {
         }
 
         user.setFailedLoginCount(0);
+        user.setStatus(UserStatus.ACTIVE);
         user.setLockedUntil(null);
         userAccountRepository.save(user);
         LOG.info("Login successful userId={} email={}", user.getId(), normalizedEmail);
@@ -423,7 +424,7 @@ public class AuthService {
     }
 
     private void validateAccountState(UserAccount user) {
-        if(user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now()) && user.getStatus().equals(UserStatus.LOCKED)) {
+        if(user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
             LOG.warn("Account is currently locked userId={} lockedUntil={}", user.getId(), user.getLockedUntil());
             throw new AccountLockedException("Account temporarily locked due to failed login attempts");
         }
