@@ -1,7 +1,8 @@
 package com.suraj.authsphere.auth.service;
 
-import com.suraj.authsphere.auth.config.JwtProperties;
 import com.suraj.authsphere.auth.config.AuthRateLimitProperties;
+import com.suraj.authsphere.auth.config.EmailVerificationTokenProperties;
+import com.suraj.authsphere.auth.config.JwtProperties;
 import com.suraj.authsphere.auth.domain.EmailVerificationToken;
 import com.suraj.authsphere.auth.domain.PasswordResetToken;
 import com.suraj.authsphere.auth.domain.UserAccount;
@@ -52,6 +53,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final JwtProperties jwtProperties;
+    private final EmailVerificationTokenProperties emailVerificationTokenProperties;
+    private final VerificationEmailService verificationEmailService;
     private final AuthRateLimiter authRateLimiter;
     private final AuthRateLimitProperties authRateLimitProperties;
 
@@ -63,6 +66,8 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtTokenService jwtTokenService,
             JwtProperties jwtProperties,
+            EmailVerificationTokenProperties emailVerificationTokenProperties,
+            VerificationEmailService verificationEmailService,
             AuthRateLimiter authRateLimiter,
             AuthRateLimitProperties authRateLimitProperties
     ) {
@@ -73,6 +78,8 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.jwtProperties = jwtProperties;
+        this.emailVerificationTokenProperties = emailVerificationTokenProperties;
+        this.verificationEmailService = verificationEmailService;
         this.authRateLimiter = authRateLimiter;
         this.authRateLimitProperties = authRateLimitProperties;
     }
@@ -99,6 +106,8 @@ public class AuthService {
         user.setTokenVersion(1);
 
         userAccountRepository.save(user);
+        String verificationToken = issueEmailVerificationToken(user);
+        verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
         return generateTokenPair(user, clientContext);
     }
 
@@ -309,32 +318,19 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse resendEmailVerification(String email) {
         String normalizedEmail = normalizeEmail(email);
-        UserAccount user = userAccountRepository
-                .findByEmailIgnoreCase(normalizedEmail)
-                .orElseThrow(() -> new BadRequestException("No account found with this email"));
+        UserAccount user = userAccountRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+
+        // Do not reveal whether an account exists.
+        if(user == null) {
+            return new ApiMessageResponse("Verification email sent");
+        }
 
         if(user.isEmailVerified()) {
             return new ApiMessageResponse("Email is already verified");
         }
 
-        String verificationToken = generateSecureToken();
-        String tokenHash = hashToken(verificationToken);
-
-        // Delete existing tokens for this user
-        emailVerificationTokenRepository
-                .findByUserIdAndVerifiedAtIsNull(user.getId())
-                .ifPresent(existingToken -> emailVerificationTokenRepository.delete(existingToken));
-
-        // Create new verification token
-        EmailVerificationToken tokenEntity = new EmailVerificationToken();
-        tokenEntity.setId(java.util.UUID.randomUUID());
-        tokenEntity.setUserId(user.getId());
-        tokenEntity.setEmail(user.getEmail());
-        tokenEntity.setTokenHash(tokenHash);
-        tokenEntity.setExpiresAt(Instant.now().plusSeconds(86400)); // 24 hours
-        emailVerificationTokenRepository.save(tokenEntity);
-
-        // TODO: Send email with verification link containing the plain token
+        String verificationToken = issueEmailVerificationToken(user);
+        verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
         return new ApiMessageResponse("Verification email sent");
     }
 
@@ -369,6 +365,20 @@ public class AuthService {
         emailVerificationTokenRepository.save(tokenEntity);
 
         return new ApiMessageResponse("Email verified successfully");
+    }
+
+    @Transactional
+    public TokenPairResponse issueTokenPairForUser(UUID userId, ClientContext clientContext) {
+        UserAccount user = userAccountRepository
+            .findById(userId)
+            .orElseThrow(() -> new UnauthorizedException("User not found"));
+
+        validateAccountState(user);
+        user.setFailedLoginCount(0);
+        user.setLockedUntil(null);
+        userAccountRepository.save(user);
+
+        return generateTokenPair(user, clientContext == null ? ClientContext.unknown() : clientContext);
     }
 
     private void validateAccountState(UserAccount user) {
@@ -450,6 +460,25 @@ public class AuthService {
         catch(NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
         }
+    }
+
+    private String issueEmailVerificationToken(UserAccount user) {
+        String verificationToken = generateSecureToken();
+        String tokenHash = hashToken(verificationToken);
+
+        emailVerificationTokenRepository
+            .findByUserIdAndVerifiedAtIsNull(user.getId())
+            .ifPresent(emailVerificationTokenRepository::delete);
+
+        EmailVerificationToken tokenEntity = new EmailVerificationToken();
+        tokenEntity.setId(UUID.randomUUID());
+        tokenEntity.setUserId(user.getId());
+        tokenEntity.setEmail(user.getEmail());
+        tokenEntity.setTokenHash(tokenHash);
+        tokenEntity.setExpiresAt(Instant.now().plusSeconds(emailVerificationTokenProperties.expirySeconds()));
+        emailVerificationTokenRepository.save(tokenEntity);
+
+        return verificationToken;
     }
 
     private String sanitize(String value, int maxLength, String fallback) {

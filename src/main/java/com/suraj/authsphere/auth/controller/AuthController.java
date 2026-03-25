@@ -1,6 +1,13 @@
 package com.suraj.authsphere.auth.controller;
 
 import com.suraj.authsphere.auth.dto.ApiMessageResponse;
+import com.suraj.authsphere.auth.dto.BiometricCredentialResponse;
+import com.suraj.authsphere.auth.dto.BiometricLoginOptionsRequest;
+import com.suraj.authsphere.auth.dto.BiometricLoginOptionsResponse;
+import com.suraj.authsphere.auth.dto.BiometricLoginVerifyRequest;
+import com.suraj.authsphere.auth.dto.BiometricRegisterOptionsRequest;
+import com.suraj.authsphere.auth.dto.BiometricRegisterOptionsResponse;
+import com.suraj.authsphere.auth.dto.BiometricRegisterVerifyRequest;
 import com.suraj.authsphere.auth.dto.ForgotPasswordRequest;
 import com.suraj.authsphere.auth.dto.LoginRequest;
 import com.suraj.authsphere.auth.dto.RefreshTokenRequest;
@@ -10,6 +17,7 @@ import com.suraj.authsphere.auth.dto.RegisterRequest;
 import com.suraj.authsphere.auth.dto.SessionSummaryResponse;
 import com.suraj.authsphere.auth.dto.TokenPairResponse;
 import com.suraj.authsphere.auth.dto.VerifyEmailRequest;
+import com.suraj.authsphere.auth.service.BiometricAuthService;
 import com.suraj.authsphere.auth.service.ClientContext;
 import com.suraj.authsphere.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,9 +41,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final BiometricAuthService biometricAuthService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, BiometricAuthService biometricAuthService) {
         this.authService = authService;
+        this.biometricAuthService = biometricAuthService;
     }
 
     @PostMapping("/register")
@@ -101,6 +112,11 @@ public class AuthController {
         return authService.verifyEmail(request.token());
     }
 
+    @GetMapping("/verify-email")
+    public ApiMessageResponse verifyEmailByLink(@RequestParam("token") String token) {
+        return authService.verifyEmail(token);
+    }
+
     @PostMapping("/resend-verification")
     public ApiMessageResponse resendVerification(@Valid @RequestBody ForgotPasswordRequest request) {
         return authService.resendEmailVerification(request.email());
@@ -109,6 +125,50 @@ public class AuthController {
     @GetMapping("/health")
     public String health() {
         return "auth-service-up";
+    }
+
+    @PostMapping("/biometric/register/options")
+    public BiometricRegisterOptionsResponse biometricRegisterOptions(
+        @Valid @RequestBody BiometricRegisterOptionsRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return biometricAuthService.beginRegistration(request, toClientContext(httpRequest));
+    }
+
+    @PostMapping("/biometric/register/verify")
+    public ApiMessageResponse biometricRegisterVerify(@Valid @RequestBody BiometricRegisterVerifyRequest request) {
+        return biometricAuthService.finishRegistration(request);
+    }
+
+    @PostMapping("/biometric/login/options")
+    public BiometricLoginOptionsResponse biometricLoginOptions(
+        @Valid @RequestBody BiometricLoginOptionsRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return biometricAuthService.beginAuthentication(request, toClientContext(httpRequest));
+    }
+
+    @PostMapping("/biometric/login/verify")
+    public TokenPairResponse biometricLoginVerify(
+        @Valid @RequestBody BiometricLoginVerifyRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return biometricAuthService.finishAuthentication(request, toClientContext(httpRequest));
+    }
+
+    @GetMapping("/biometric/credentials")
+    public List<BiometricCredentialResponse> listBiometricCredentials(
+        @RequestHeader("X-Refresh-Token") String refreshToken
+    ) {
+        return biometricAuthService.listCredentials(refreshToken);
+    }
+
+    @DeleteMapping("/biometric/credentials/{credentialRecordId}")
+    public ApiMessageResponse revokeBiometricCredential(
+        @PathVariable("credentialRecordId") java.util.UUID credentialRecordId,
+        @RequestHeader("X-Refresh-Token") String refreshToken
+    ) {
+        return biometricAuthService.revokeCredential(refreshToken, credentialRecordId);
     }
 
     private ClientContext toClientContext(HttpServletRequest request) {
