@@ -32,6 +32,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +42,7 @@ public class BiometricAuthService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final long CHALLENGE_TTL_SECONDS = 120;
+    private static final Logger LOG = LoggerFactory.getLogger(BiometricAuthService.class);
 
     private final BiometricCredentialRepository biometricCredentialRepository;
     private final BiometricChallengeRepository biometricChallengeRepository;
@@ -72,6 +75,7 @@ public class BiometricAuthService {
         assertRateLimit("biometric-register", clientContext.ipAddress(), authRateLimitProperties.biometricRegisterMaxPerMinute());
 
         UserAccount user = resolveUserFromRefreshToken(request.refreshToken());
+        LOG.info("Biometric registration options requested userId={} ip={}", user.getId(), clientContext.ipAddress());
         cleanupExpiredChallenges();
 
         BiometricChallenge challenge = new BiometricChallenge();
@@ -81,6 +85,7 @@ public class BiometricAuthService {
         challenge.setChallengeValue(generateSecureToken());
         challenge.setExpiresAt(Instant.now().plusSeconds(CHALLENGE_TTL_SECONDS));
         biometricChallengeRepository.save(challenge);
+        LOG.debug("Biometric enroll challenge issued challengeId={} userId={}", challenge.getId(), user.getId());
 
         return new BiometricRegisterOptionsResponse(challenge.getId(), challenge.getChallengeValue(), challenge.getExpiresAt());
     }
@@ -88,6 +93,7 @@ public class BiometricAuthService {
     @Transactional
     public ApiMessageResponse finishRegistration(BiometricRegisterVerifyRequest request) {
         UserAccount user = resolveUserFromRefreshToken(request.refreshToken());
+        LOG.info("Biometric registration verification requested userId={}", user.getId());
 
         BiometricChallenge challenge = biometricChallengeRepository
             .findByIdAndUserId(request.challengeId(), user.getId())
@@ -96,11 +102,13 @@ public class BiometricAuthService {
         validateChallenge(challenge, ChallengePurpose.ENROLL);
 
         if (biometricCredentialRepository.existsByCredentialId(request.credentialId())) {
+            LOG.warn("Biometric registration denied because credential already exists userId={}", user.getId());
             throw new BadRequestException("Credential ID is already registered");
         }
 
         String expectedProof = computeProof(challenge.getChallengeValue(), request.credentialId(), request.publicKey());
         if (!expectedProof.equals(request.clientProof())) {
+            LOG.warn("Biometric registration proof mismatch userId={} challengeId={}", user.getId(), challenge.getId());
             throw new UnauthorizedException("Invalid biometric proof");
         }
 
@@ -115,6 +123,7 @@ public class BiometricAuthService {
 
         challenge.setUsedAt(Instant.now());
         biometricChallengeRepository.save(challenge);
+        LOG.info("Biometric credential enrolled userId={} credentialRecordId={}", user.getId(), credential.getId());
 
         return new ApiMessageResponse("Biometric credential enrolled successfully");
     }
@@ -122,6 +131,7 @@ public class BiometricAuthService {
     @Transactional(readOnly = true)
     public List<BiometricCredentialResponse> listCredentials(String refreshToken) {
         UserAccount user = resolveUserFromRefreshToken(refreshToken);
+        LOG.debug("List biometric credentials requested userId={}", user.getId());
         return biometricCredentialRepository.findByUserIdAndRevokedAtIsNull(user.getId())
             .stream()
             .map(credential -> new BiometricCredentialResponse(
@@ -138,34 +148,41 @@ public class BiometricAuthService {
     @Transactional
     public ApiMessageResponse revokeCredential(String refreshToken, UUID credentialRecordId) {
         UserAccount user = resolveUserFromRefreshToken(refreshToken);
+        LOG.info("Biometric credential revoke requested userId={} credentialRecordId={}", user.getId(), credentialRecordId);
 
         BiometricCredential credential = biometricCredentialRepository
             .findById(credentialRecordId)
             .orElseThrow(() -> new BadRequestException("Biometric credential not found"));
 
         if (!credential.getUserId().equals(user.getId())) {
+            LOG.warn("Biometric credential revoke denied due to ownership mismatch requesterUserId={} credentialUserId={}", user.getId(), credential.getUserId());
             throw new UnauthorizedException("Credential does not belong to user");
         }
 
         if (credential.getRevokedAt() != null) {
+            LOG.info("Biometric credential already revoked credentialRecordId={}", credential.getId());
             return new ApiMessageResponse("Biometric credential already revoked");
         }
 
         credential.setRevokedAt(Instant.now());
         biometricCredentialRepository.save(credential);
+        LOG.info("Biometric credential revoked credentialRecordId={} userId={}", credential.getId(), user.getId());
         return new ApiMessageResponse("Biometric credential revoked successfully");
     }
 
     @Transactional
     public BiometricLoginOptionsResponse beginAuthentication(BiometricLoginOptionsRequest request, ClientContext clientContext) {
         assertRateLimit("biometric-login", clientContext.ipAddress(), authRateLimitProperties.biometricLoginMaxPerMinute());
+        String normalizedEmail = normalizeEmail(request.email());
+        LOG.info("Biometric login options requested email={} ip={}", normalizedEmail, clientContext.ipAddress());
 
         UserAccount user = userAccountRepository
-            .findByEmailIgnoreCase(normalizeEmail(request.email()))
+            .findByEmailIgnoreCase(normalizedEmail)
             .orElseThrow(() -> new UnauthorizedException("Biometric authentication unavailable"));
 
         List<BiometricCredential> credentials = biometricCredentialRepository.findByUserIdAndRevokedAtIsNull(user.getId());
         if (credentials.isEmpty()) {
+            LOG.warn("Biometric login options denied because no active credentials userId={} email={}", user.getId(), normalizedEmail);
             throw new BadRequestException("No biometric credentials enrolled");
         }
 
@@ -178,6 +195,7 @@ public class BiometricAuthService {
         challenge.setChallengeValue(generateSecureToken());
         challenge.setExpiresAt(Instant.now().plusSeconds(CHALLENGE_TTL_SECONDS));
         biometricChallengeRepository.save(challenge);
+        LOG.debug("Biometric auth challenge issued challengeId={} userId={}", challenge.getId(), user.getId());
 
         List<String> credentialIds = credentials.stream().map(BiometricCredential::getCredentialId).toList();
         return new BiometricLoginOptionsResponse(challenge.getId(), challenge.getChallengeValue(), challenge.getExpiresAt(), credentialIds);
@@ -185,8 +203,10 @@ public class BiometricAuthService {
 
     @Transactional
     public TokenPairResponse finishAuthentication(BiometricLoginVerifyRequest request, ClientContext clientContext) {
+        String normalizedEmail = normalizeEmail(request.email());
+        LOG.info("Biometric login verification requested email={} ip={}", normalizedEmail, clientContext.ipAddress());
         UserAccount user = userAccountRepository
-            .findByEmailIgnoreCase(normalizeEmail(request.email()))
+            .findByEmailIgnoreCase(normalizedEmail)
             .orElseThrow(() -> new UnauthorizedException("Biometric authentication failed"));
 
         BiometricChallenge challenge = biometricChallengeRepository
@@ -200,11 +220,13 @@ public class BiometricAuthService {
             .orElseThrow(() -> new UnauthorizedException("Biometric credential not found"));
 
         if (!credential.getUserId().equals(user.getId()) || credential.getRevokedAt() != null) {
+            LOG.warn("Biometric login denied because credential inactive or ownership mismatch userId={} credentialRecordId={}", user.getId(), credential.getId());
             throw new UnauthorizedException("Biometric credential is not active");
         }
 
         String expectedProof = computeProof(challenge.getChallengeValue(), request.credentialId(), credential.getPublicKey());
         if (!expectedProof.equals(request.clientProof())) {
+            LOG.warn("Biometric login denied due to proof mismatch userId={} challengeId={}", user.getId(), challenge.getId());
             throw new UnauthorizedException("Invalid biometric proof");
         }
 
@@ -214,6 +236,7 @@ public class BiometricAuthService {
         credential.setSignCount(credential.getSignCount() + 1);
         credential.setLastUsedAt(Instant.now());
         biometricCredentialRepository.save(credential);
+        LOG.info("Biometric login successful userId={} credentialRecordId={}", user.getId(), credential.getId());
 
         return authService.issueTokenPairForUser(user.getId(), clientContext);
     }
@@ -244,6 +267,7 @@ public class BiometricAuthService {
 
     private void assertRateLimit(String scope, String key, int limitPerMinute) {
         if (!authRateLimiter.allow(scope, key, limitPerMinute)) {
+            LOG.warn("Rate limit exceeded scope={} key={} limitPerMinute={}", scope, key, limitPerMinute);
             throw new TooManyRequestsException("Too many requests. Please try again later.");
         }
     }
@@ -278,6 +302,7 @@ public class BiometricAuthService {
 
     private void cleanupExpiredChallenges() {
         biometricChallengeRepository.deleteByExpiresAtBefore(Instant.now());
+        LOG.debug("Expired biometric challenges cleanup executed");
     }
 }
 

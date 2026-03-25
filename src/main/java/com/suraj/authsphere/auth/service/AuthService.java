@@ -36,6 +36,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +47,7 @@ public class AuthService {
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final Logger LOG = LoggerFactory.getLogger(AuthService.class);
 
     private final UserAccountRepository userAccountRepository;
     private final UserSessionRepository userSessionRepository;
@@ -92,13 +95,16 @@ public class AuthService {
     @Transactional
     public TokenPairResponse register(RegisterRequest request, ClientContext clientContext) {
         String normalizedEmail = normalizeEmail(request.getEmail());
+        LOG.info("Register attempt for email={} ip={}", normalizedEmail, clientContext.ipAddress());
         
         // Validate that password and confirmPassword match
         if(!request.getPassword().equals(request.getConfirmPassword())) {
+            LOG.warn("Register failed due to password mismatch for email={}", normalizedEmail);
             throw new BadRequestException("Passwords do not match");
         }
         
         if(userAccountRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            LOG.warn("Register failed because email already exists email={}", normalizedEmail);
             throw new BadRequestException("Email already registered");
         }
 
@@ -114,6 +120,7 @@ public class AuthService {
         userAccountRepository.save(user);
         String verificationToken = issueEmailVerificationToken(user);
         verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
+        LOG.info("User registered userId={} email={} status={}", user.getId(), normalizedEmail, user.getStatus());
         return generateTokenPair(user, clientContext);
     }
 
@@ -125,21 +132,25 @@ public class AuthService {
     @Transactional
     public TokenPairResponse login(LoginRequest request, ClientContext clientContext) {
         assertRateLimit("login", clientContext.ipAddress(), authRateLimitProperties.loginMaxPerMinute());
+        String normalizedEmail = normalizeEmail(request.getEmail());
+        LOG.info("Login attempt email={} ip={}", normalizedEmail, clientContext.ipAddress());
 
         UserAccount user = userAccountRepository
-                .findByEmailIgnoreCase(normalizeEmail(request.getEmail()))
+                .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
         validateAccountState(user);
 
         if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             registerFailedAttempt(user);
+            LOG.warn("Login failed due to invalid password userId={} email={}", user.getId(), normalizedEmail);
             throw new UnauthorizedException("Invalid email or password");
         }
 
         user.setFailedLoginCount(0);
         user.setLockedUntil(null);
         userAccountRepository.save(user);
+        LOG.info("Login successful userId={} email={}", user.getId(), normalizedEmail);
 
         return generateTokenPair(user, clientContext);
     }
@@ -152,6 +163,7 @@ public class AuthService {
     @Transactional
     public TokenPairResponse refresh(RefreshTokenRequest request, ClientContext clientContext) {
         assertRateLimit("refresh", clientContext.ipAddress(), authRateLimitProperties.refreshMaxPerMinute());
+        LOG.info("Refresh token attempt ip={}", clientContext.ipAddress());
 
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
@@ -161,10 +173,12 @@ public class AuthService {
                 .orElseThrow(() -> new UnauthorizedException("Refresh session not found"));
 
         if(activeSession.getRevokedAt() != null || activeSession.getExpiresAt().isBefore(Instant.now())) {
+            LOG.warn("Refresh denied because session is inactive sessionId={} userId={}", activeSession.getId(), user.getId());
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
 
         if(!hashToken(request.refreshToken()).equals(activeSession.getRefreshTokenHash())) {
+            LOG.warn("Refresh denied because refresh token hash mismatched sessionId={} userId={}", activeSession.getId(), user.getId());
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
 
@@ -172,6 +186,7 @@ public class AuthService {
         activeSession.setRevokeReason("ROTATED");
         activeSession.setLastSeenAt(Instant.now());
         userSessionRepository.save(activeSession);
+        LOG.info("Refresh successful, old session rotated sessionId={} userId={}", activeSession.getId(), user.getId());
 
         return generateTokenPair(user, clientContext);
     }
@@ -179,6 +194,7 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse logout(RefreshTokenRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
+        LOG.info("Logout requested userId={}", claims.userId());
         userSessionRepository
                 .findByRefreshTokenJti(claims.jti())
                 .ifPresent(session -> {
@@ -193,6 +209,7 @@ public class AuthService {
     public ApiMessageResponse logoutAll(RefreshTokenRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
+        LOG.info("Logout-all requested userId={} currentTokenVersion={}", user.getId(), user.getTokenVersion());
 
         user.setTokenVersion(user.getTokenVersion() + 1);
         userAccountRepository.save(user);
@@ -202,6 +219,7 @@ public class AuthService {
             session.setRevokeReason("LOGOUT_ALL");
             userSessionRepository.save(session);
         }
+        LOG.info("Logout-all completed userId={} newTokenVersion={}", user.getId(), user.getTokenVersion());
 
         return new ApiMessageResponse("Logged out from all devices");
     }
@@ -210,6 +228,7 @@ public class AuthService {
     public List<SessionSummaryResponse> listActiveSessions(RefreshTokenRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
+        LOG.debug("List active sessions requested userId={}", user.getId());
 
         return userSessionRepository
                 .findByUserIdAndRevokedAtIsNullAndExpiresAtAfter(user.getId(), Instant.now())
@@ -230,12 +249,14 @@ public class AuthService {
     public ApiMessageResponse revokeSession(RevokeSessionRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
+        LOG.info("Session revoke requested userId={} targetSessionId={}", user.getId(), request.sessionId());
 
         UserSession session = userSessionRepository
                 .findByIdAndUserId(request.sessionId(), user.getId())
                 .orElseThrow(() -> new BadRequestException("Session not found"));
 
         if(session.getRevokedAt() != null || session.getExpiresAt().isBefore(Instant.now())) {
+            LOG.info("Session already inactive targetSessionId={}", session.getId());
             return new ApiMessageResponse("Session is already inactive");
         }
 
@@ -243,6 +264,7 @@ public class AuthService {
         session.setRevokeReason("MANUAL_REVOKE");
         session.setLastSeenAt(Instant.now());
         userSessionRepository.save(session);
+        LOG.info("Session revoked targetSessionId={} userId={}", session.getId(), user.getId());
         return new ApiMessageResponse("Session revoked successfully");
     }
 
@@ -257,6 +279,7 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse initiatePasswordReset(String email) {
         String normalizedEmail = normalizeEmail(email);
+        LOG.info("Password reset initiation requested email={}", normalizedEmail);
         UserAccount user = userAccountRepository
                 .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new BadRequestException("No account found with this email"));
@@ -273,6 +296,7 @@ public class AuthService {
         resetTokenEntity.setTokenHash(tokenHash);
         resetTokenEntity.setExpiresAt(Instant.now().plusSeconds(3600)); // 1 hour
         passwordResetTokenRepository.save(resetTokenEntity);
+        LOG.info("Password reset token issued userId={} email={}", user.getId(), normalizedEmail);
 
         // TODO: Send The Token Through Email for Verification
         return new ApiMessageResponse("Password reset link sent to email");
@@ -284,6 +308,7 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse resetPassword(String resetToken, String newPassword) {
         String tokenHash = hashToken(resetToken);
+        LOG.info("Password reset verification requested");
 
         PasswordResetToken tokenEntity = passwordResetTokenRepository
                 .findByTokenHashAndExpiresAtAfter(tokenHash, Instant.now())
@@ -314,6 +339,7 @@ public class AuthService {
             session.setRevokeReason("PASSWORD_RESET");
             userSessionRepository.save(session);
         }
+        LOG.info("Password reset completed userId={} tokenVersion={}", user.getId(), user.getTokenVersion());
 
         return new ApiMessageResponse("Password has been reset successfully");
     }
@@ -324,19 +350,23 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse resendEmailVerification(String email) {
         String normalizedEmail = normalizeEmail(email);
+        LOG.info("Resend verification requested email={}", normalizedEmail);
         UserAccount user = userAccountRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
 
         // Do not reveal whether an account exists.
         if(user == null) {
+            LOG.info("Resend verification completed for unknown account email={}", normalizedEmail);
             return new ApiMessageResponse("Verification email sent");
         }
 
         if(user.isEmailVerified()) {
+            LOG.info("Resend verification skipped because email already verified userId={} email={}", user.getId(), normalizedEmail);
             return new ApiMessageResponse("Email is already verified");
         }
 
         String verificationToken = issueEmailVerificationToken(user);
         verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
+        LOG.info("Resend verification completed userId={} email={}", user.getId(), normalizedEmail);
         return new ApiMessageResponse("Verification email sent");
     }
 
@@ -346,12 +376,14 @@ public class AuthService {
     @Transactional
     public ApiMessageResponse verifyEmail(String verificationToken) {
         String tokenHash = hashToken(verificationToken);
+        LOG.info("Email verification requested");
 
         EmailVerificationToken tokenEntity = emailVerificationTokenRepository
                 .findByTokenHashAndExpiresAtAfter(tokenHash, Instant.now())
                 .orElseThrow(() -> new BadRequestException("Invalid or expired verification token"));
 
         if(tokenEntity.getVerifiedAt() != null) {
+            LOG.info("Email verification skipped because token already used userId={}", tokenEntity.getUserId());
             return new ApiMessageResponse("Email has already been verified");
         }
 
@@ -369,6 +401,7 @@ public class AuthService {
         // Mark token as verified
         tokenEntity.setVerifiedAt(Instant.now());
         emailVerificationTokenRepository.save(tokenEntity);
+        LOG.info("Email verified successfully userId={} email={}", user.getId(), user.getEmail());
 
         return new ApiMessageResponse("Email verified successfully");
     }
@@ -378,6 +411,7 @@ public class AuthService {
         UserAccount user = userAccountRepository
             .findById(userId)
             .orElseThrow(() -> new UnauthorizedException("User not found"));
+        LOG.info("Issue token pair requested userId={} ip={}", user.getId(), clientContext == null ? "unknown" : clientContext.ipAddress());
 
         validateAccountState(user);
         user.setFailedLoginCount(0);
@@ -389,10 +423,12 @@ public class AuthService {
 
     private void validateAccountState(UserAccount user) {
         if(user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
+            LOG.warn("Account is currently locked userId={} lockedUntil={}", user.getId(), user.getLockedUntil());
             throw new AccountLockedException("Account temporarily locked due to failed login attempts");
         }
 
         if(user.getStatus() == UserStatus.DISABLED) {
+            LOG.warn("Account is disabled userId={}", user.getId());
             throw new UnauthorizedException("Account is disabled");
         }
     }
@@ -405,6 +441,7 @@ public class AuthService {
             user.setStatus(UserStatus.LOCKED);
             user.setLockedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
             user.setFailedLoginCount(0);
+            LOG.warn("Account locked after failed attempts userId={} lockMinutes=15", user.getId());
         }
 
         userAccountRepository.save(user);
@@ -440,6 +477,7 @@ public class AuthService {
         session.setLastSeenAt(now);
 
         userSessionRepository.save(session);
+        LOG.debug("Session persisted sessionId={} userId={} device={}", session.getId(), userId, session.getDeviceName());
     }
 
     private UserAccount resolveRefreshUser(RefreshTokenClaims claims) {
@@ -496,6 +534,7 @@ public class AuthService {
 
     private void assertRateLimit(String scope, String key, int limitPerMinute) {
         if(!authRateLimiter.allow(scope, key, limitPerMinute)) {
+            LOG.warn("Rate limit exceeded scope={} key={} limitPerMinute={}", scope, key, limitPerMinute);
             throw new TooManyRequestsException("Too many requests. Please try again later.");
         }
     }
