@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "authSphere API",
-    "description": "Postman collection for AuthController and AuthorizationController endpoints. NOTE: Email verification is REQUIRED before login. After register, verify email before attempting login.",
+    "description": "Postman collection for AuthController and AuthorizationController endpoints. NOTE: Email verification is REQUIRED before login. After register, verify email before attempting login. Password reset emails include both a reset URL and an OTP/token; set {{resetToken}} from either source before calling Reset Password.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_postman_id": "f7f791f9-8f93-4ed7-8fcf-2aa5261f1a5d"
   },
@@ -224,7 +224,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{password}}\"\n}"
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/auth/reset-password"
           }

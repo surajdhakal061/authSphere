@@ -35,6 +35,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -56,6 +57,7 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     private final EmailVerificationTokenProperties emailVerificationTokenProperties;
     private final VerificationEmailService verificationEmailService;
+    private final ResetPasswordEmailService resetPasswordEmailService;
     private final AuthRateLimiter authRateLimiter;
     private final AuthRateLimitProperties authRateLimitProperties;
     private final FailedLoginAttemptService failedLoginAttemptService;
@@ -70,6 +72,7 @@ public class AuthService {
             JwtProperties jwtProperties,
             EmailVerificationTokenProperties emailVerificationTokenProperties,
             VerificationEmailService verificationEmailService,
+            ResetPasswordEmailService resetPasswordEmailService,
             AuthRateLimiter authRateLimiter,
             AuthRateLimitProperties authRateLimitProperties,
             FailedLoginAttemptService failedLoginAttemptService
@@ -83,6 +86,7 @@ public class AuthService {
         this.jwtProperties = jwtProperties;
         this.emailVerificationTokenProperties = emailVerificationTokenProperties;
         this.verificationEmailService = verificationEmailService;
+        this.resetPasswordEmailService = resetPasswordEmailService;
         this.authRateLimiter = authRateLimiter;
         this.authRateLimitProperties = authRateLimitProperties;
         this.failedLoginAttemptService = failedLoginAttemptService;
@@ -257,20 +261,21 @@ public class AuthService {
     public ApiMessageResponse revokeSession(RevokeSessionRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.refreshToken());
         UserAccount user = resolveRefreshUser(claims);
+        Instant now = Instant.now();
         LOG.info("Session revoke requested userId={} targetSessionId={}", user.getId(), request.sessionId());
 
         UserSession session = userSessionRepository
                 .findByIdAndUserId(request.sessionId(), user.getId())
                 .orElseThrow(() -> new BadRequestException("Session not found"));
 
-        if(session.getRevokedAt() != null || session.getExpiresAt().isBefore(Instant.now())) {
+        if(session.getRevokedAt() != null || session.getExpiresAt().isBefore(now)) {
             LOG.info("Session already inactive targetSessionId={}", session.getId());
             return new ApiMessageResponse("Session is already inactive");
         }
 
-        session.setRevokedAt(Instant.now());
+        session.setRevokedAt(now);
         session.setRevokeReason("MANUAL_REVOKE");
-        session.setLastSeenAt(Instant.now());
+        session.setLastSeenAt(now);
         userSessionRepository.save(session);
         LOG.info("Session revoked targetSessionId={} userId={}", session.getId(), user.getId());
         return new ApiMessageResponse("Session revoked successfully");
@@ -304,9 +309,8 @@ public class AuthService {
         resetTokenEntity.setTokenHash(tokenHash);
         resetTokenEntity.setExpiresAt(Instant.now().plusSeconds(3600)); // 1 hour
         passwordResetTokenRepository.save(resetTokenEntity);
+        resetPasswordEmailService.sendPasswordResetEmail(user.getEmail(), resetToken);
         LOG.info("Password reset token issued userId={} email={}", user.getId(), normalizedEmail);
-
-        // TODO: Send The Token Through Email for Verification
         return new ApiMessageResponse("Password reset link sent to email");
     }
 
@@ -314,7 +318,11 @@ public class AuthService {
      * Reset password using reset token
      */
     @Transactional
-    public ApiMessageResponse resetPassword(String resetToken, String newPassword) {
+    public ApiMessageResponse resetPassword(String resetToken, String newPassword, String confirmPassword) {
+        if(!newPassword.equals(confirmPassword)) {
+            throw new BadRequestException("Passwords do not match");
+        }
+
         String tokenHash = hashToken(resetToken);
         LOG.info("Password reset verification requested");
 

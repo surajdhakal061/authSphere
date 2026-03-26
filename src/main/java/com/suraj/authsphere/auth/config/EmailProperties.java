@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record EmailProperties(
     boolean enabled,
     String from,
-    String verificationBaseUrl
+    String verificationBaseUrl,
+    String resetBaseUrl
 ) {
 }
 

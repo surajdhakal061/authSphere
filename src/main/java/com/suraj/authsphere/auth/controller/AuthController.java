@@ -106,7 +106,7 @@ public class AuthController {
 
     @PostMapping("/reset-password")
     public ApiMessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        return authService.resetPassword(request.token(), request.newPassword());
+        return authService.resetPassword(request.getToken(), request.getNewPassword(), request.getConfirmPassword());
     }
 
     @PostMapping("/verify-email")
