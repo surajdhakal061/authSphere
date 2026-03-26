@@ -166,16 +166,24 @@ public class AuthService {
     public TokenPairResponse refresh(RefreshTokenRequest request, ClientContext clientContext) {
         assertRateLimit("refresh", clientContext.ipAddress(), authRateLimitProperties.refreshMaxPerMinute());
         LOG.info("Refresh token attempt ip={}", clientContext.ipAddress());
+        Instant now = Instant.now();
 
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         UserAccount user = resolveRefreshUser(claims);
+
+        validateAccountState(user);
 
         UserSession activeSession = userSessionRepository
                 .findByRefreshTokenJti(claims.jti())
                 .orElseThrow(() -> new UnauthorizedException("Refresh session not found"));
 
-        if(activeSession.getRevokedAt() != null || activeSession.getExpiresAt().isBefore(Instant.now())) {
+        if(activeSession.getRevokedAt() != null || activeSession.getExpiresAt().isBefore(now)) {
             LOG.warn("Refresh denied because session is inactive sessionId={} userId={}", activeSession.getId(), user.getId());
+            throw new UnauthorizedException("Refresh token is no longer valid");
+        }
+
+        if(!activeSession.getUserId().equals(user.getId())){
+            LOG.warn("Refresh denied because session does not belong to user sessionId={} userId={}", activeSession.getId(), user.getId());
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
 
@@ -184,12 +192,11 @@ public class AuthService {
             throw new UnauthorizedException("Refresh token is no longer valid");
         }
 
-        activeSession.setRevokedAt(Instant.now());
+        activeSession.setRevokedAt(now);
         activeSession.setRevokeReason("ROTATED");
-        activeSession.setLastSeenAt(Instant.now());
+        activeSession.setLastSeenAt(now);
         userSessionRepository.save(activeSession);
         LOG.info("Refresh successful, old session rotated sessionId={} userId={}", activeSession.getId(), user.getId());
-
         return generateTokenPair(user, clientContext);
     }
 
@@ -443,7 +450,7 @@ public class AuthService {
 
     private TokenPairResponse generateTokenPair(UserAccount user, ClientContext clientContext) {
         String accessToken = jwtTokenService.generateAccessToken(user);
-        String refreshToken = jwtTokenService.generateAccessToken(user);
+        String refreshToken = jwtTokenService.generateRefreshToken(user);
         persistSession(user.getId(), refreshToken, clientContext);
 
         return new TokenPairResponse(
