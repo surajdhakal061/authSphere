@@ -1,7 +1,6 @@
 package com.suraj.authsphere.auth.service;
 
 import com.suraj.authsphere.auth.domain.UserAccount;
-import com.suraj.authsphere.auth.domain.UserStatus;
 import com.suraj.authsphere.auth.repository.UserAccountRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -36,7 +35,6 @@ public class FailedLoginAttemptService {
         user.setFailedLoginCount(nextAttempts);
 
         if (nextAttempts >= MAX_FAILED_ATTEMPTS) {
-            user.setStatus(UserStatus.LOCKED);
             user.setLockedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
             user.setFailedLoginCount(0);
             LOG.warn("Account locked after failed attempts userId={} lockMinutes=15", user.getId());

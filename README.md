@@ -568,7 +568,7 @@ role_permissions (Role-Permission Mapping)
 id: UUID (Primary Key)
 email: VARCHAR(320) - Unique, normalized
 password_hash: VARCHAR(255) - BCrypt hash
-status: VARCHAR(32) - ACTIVE, LOCKED, DISABLED, PENDING_VERIFICATION
+status: VARCHAR(32) - ACTIVE, DISABLED, PENDING_VERIFICATION
 email_verified: BOOLEAN - Account verification status
 failed_login_count: INTEGER - For account lockout
 locked_until: TIMESTAMP - Lockout expiry
@@ -759,7 +759,6 @@ Advantage:
 Failed Login Attempt:
 ├─ Increment user.failed_login_count
 ├─ If count >= 5:
-│  ├─ Set user.status = LOCKED
 │  ├─ Set user.locked_until = now + 15 minutes
 │  ├─ Reset failed_login_count to 0
 │  └─ Return 423 Locked
@@ -1192,7 +1191,6 @@ export JWT_ACCESS_SECRET=prod-secret-123-min-32-chars
     
     INCREMENT failed_login_count: 1 → 2
     If count == 5:
-      └─ Set status = LOCKED
       └─ Set locked_until = now + 15 minutes
       └─ Return 423 Locked
     Else:

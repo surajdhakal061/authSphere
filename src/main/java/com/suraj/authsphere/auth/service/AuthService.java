@@ -149,7 +149,6 @@ public class AuthService {
         }
 
         user.setFailedLoginCount(0);
-        user.setStatus(UserStatus.ACTIVE);
         user.setLockedUntil(null);
         userAccountRepository.save(user);
         LOG.info("Login successful userId={} email={}", user.getId(), normalizedEmail);
