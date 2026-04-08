@@ -19,6 +19,10 @@ import com.suraj.authsphere.auth.repository.BiometricCredentialRepository;
 import com.suraj.authsphere.auth.repository.UserAccountRepository;
 import com.suraj.authsphere.auth.security.JwtTokenService;
 import com.suraj.authsphere.auth.security.JwtTokenService.RefreshTokenClaims;
+import com.suraj.authsphere.audit.domain.AuditEventType;
+import com.suraj.authsphere.audit.domain.AuditOutcome;
+import com.suraj.authsphere.audit.domain.AuditSeverity;
+import com.suraj.authsphere.audit.service.AuditService;
 import com.suraj.authsphere.common.exception.BadRequestException;
 import com.suraj.authsphere.common.exception.TooManyRequestsException;
 import com.suraj.authsphere.common.exception.UnauthorizedException;
@@ -51,6 +55,7 @@ public class BiometricAuthService {
     private final AuthService authService;
     private final AuthRateLimiter authRateLimiter;
     private final AuthRateLimitProperties authRateLimitProperties;
+    private final AuditService auditService;
 
     public BiometricAuthService(
         BiometricCredentialRepository biometricCredentialRepository,
@@ -59,7 +64,8 @@ public class BiometricAuthService {
         JwtTokenService jwtTokenService,
         AuthService authService,
         AuthRateLimiter authRateLimiter,
-        AuthRateLimitProperties authRateLimitProperties
+        AuthRateLimitProperties authRateLimitProperties,
+        AuditService auditService
     ) {
         this.biometricCredentialRepository = biometricCredentialRepository;
         this.biometricChallengeRepository = biometricChallengeRepository;
@@ -68,6 +74,7 @@ public class BiometricAuthService {
         this.authService = authService;
         this.authRateLimiter = authRateLimiter;
         this.authRateLimitProperties = authRateLimitProperties;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -86,6 +93,20 @@ public class BiometricAuthService {
         challenge.setExpiresAt(Instant.now().plusSeconds(CHALLENGE_TTL_SECONDS));
         biometricChallengeRepository.save(challenge);
         LOG.debug("Biometric enroll challenge issued challengeId={} userId={}", challenge.getId(), user.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.BIOMETRIC_ENROLL_STARTED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "biometric_challenge",
+            challenge.getId().toString(),
+            "biometric_register_options",
+            "biometric",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            null
+        ));
 
         return new BiometricRegisterOptionsResponse(challenge.getId(), challenge.getChallengeValue(), challenge.getExpiresAt());
     }
@@ -124,6 +145,20 @@ public class BiometricAuthService {
         challenge.setUsedAt(Instant.now());
         biometricChallengeRepository.save(challenge);
         LOG.info("Biometric credential enrolled userId={} credentialRecordId={}", user.getId(), credential.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.BIOMETRIC_ENROLLED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "biometric_credential",
+            credential.getId().toString(),
+            "biometric_register_verify",
+            "biometric",
+            null,
+            null,
+            null
+        ));
 
         return new ApiMessageResponse("Biometric credential enrolled successfully");
     }
@@ -167,6 +202,20 @@ public class BiometricAuthService {
         credential.setRevokedAt(Instant.now());
         biometricCredentialRepository.save(credential);
         LOG.info("Biometric credential revoked credentialRecordId={} userId={}", credential.getId(), user.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.BIOMETRIC_CREDENTIAL_REVOKED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "biometric_credential",
+            credential.getId().toString(),
+            "revoke_biometric_credential",
+            "biometric",
+            null,
+            null,
+            null
+        ));
         return new ApiMessageResponse("Biometric credential revoked successfully");
     }
 
@@ -237,6 +286,20 @@ public class BiometricAuthService {
         credential.setLastUsedAt(Instant.now());
         biometricCredentialRepository.save(credential);
         LOG.info("Biometric login successful userId={} credentialRecordId={}", user.getId(), credential.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.BIOMETRIC_LOGIN_SUCCEEDED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "biometric_credential",
+            credential.getId().toString(),
+            "biometric_login_verify",
+            "biometric",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            null
+        ));
 
         return authService.issueTokenPairForUser(user.getId(), clientContext);
     }

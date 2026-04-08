@@ -15,6 +15,7 @@
     <include file="db/changelog/tables/008-role-permissions.xml"/>
     <include file="db/changelog/tables/009-biometric-credentials.xml"/>
     <include file="db/changelog/tables/010-biometric-challenges.xml"/>
+    <include file="db/changelog/tables/011-audit-events.xml"/>
     <include file="/db/changelog/seed/001-seed-admin-iam.xml"/>
 
 </databaseChangeLog>

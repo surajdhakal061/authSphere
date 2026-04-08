@@ -21,6 +21,10 @@ import com.suraj.authsphere.auth.repository.UserAccountRepository;
 import com.suraj.authsphere.auth.repository.UserSessionRepository;
 import com.suraj.authsphere.auth.security.JwtTokenService;
 import com.suraj.authsphere.auth.security.JwtTokenService.RefreshTokenClaims;
+import com.suraj.authsphere.audit.domain.AuditEventType;
+import com.suraj.authsphere.audit.domain.AuditOutcome;
+import com.suraj.authsphere.audit.domain.AuditSeverity;
+import com.suraj.authsphere.audit.service.AuditService;
 import com.suraj.authsphere.common.exception.AccountLockedException;
 import com.suraj.authsphere.common.exception.BadRequestException;
 import com.suraj.authsphere.common.exception.TooManyRequestsException;
@@ -61,6 +65,7 @@ public class AuthService {
     private final AuthRateLimiter authRateLimiter;
     private final AuthRateLimitProperties authRateLimitProperties;
     private final FailedLoginAttemptService failedLoginAttemptService;
+    private final AuditService auditService;
 
     public AuthService(
             UserAccountRepository userAccountRepository,
@@ -75,7 +80,8 @@ public class AuthService {
             ResetPasswordEmailService resetPasswordEmailService,
             AuthRateLimiter authRateLimiter,
             AuthRateLimitProperties authRateLimitProperties,
-            FailedLoginAttemptService failedLoginAttemptService
+            FailedLoginAttemptService failedLoginAttemptService,
+            AuditService auditService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.userSessionRepository = userSessionRepository;
@@ -90,6 +96,7 @@ public class AuthService {
         this.authRateLimiter = authRateLimiter;
         this.authRateLimitProperties = authRateLimitProperties;
         this.failedLoginAttemptService = failedLoginAttemptService;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -105,11 +112,39 @@ public class AuthService {
         // Validate that password and confirmPassword match
         if(!request.getPassword().equals(request.getConfirmPassword())) {
             LOG.warn("Register failed due to password mismatch for email={}", normalizedEmail);
+            auditService.recordSafely(auditService.build(
+                AuditEventType.USER_REGISTRATION_FAILED,
+                AuditOutcome.FAILURE,
+                AuditSeverity.LOW,
+                null,
+                normalizedEmail,
+                "user",
+                normalizedEmail,
+                "register",
+                "auth",
+                clientContext.ipAddress(),
+                clientContext.userAgent(),
+                "password_mismatch"
+            ));
             throw new BadRequestException("Passwords do not match");
         }
         
         if(userAccountRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             LOG.warn("Register failed because email already exists email={}", normalizedEmail);
+            auditService.recordSafely(auditService.build(
+                AuditEventType.USER_REGISTRATION_FAILED,
+                AuditOutcome.FAILURE,
+                AuditSeverity.LOW,
+                null,
+                normalizedEmail,
+                "user",
+                normalizedEmail,
+                "register",
+                "auth",
+                clientContext.ipAddress(),
+                clientContext.userAgent(),
+                "email_exists"
+            ));
             throw new BadRequestException("Email already registered. Please use a different email or login to your existing account.");
         }
 
@@ -126,6 +161,34 @@ public class AuthService {
         String verificationToken = issueEmailVerificationToken(user);
         verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
         LOG.info("User registered userId={} email={} status={}", user.getId(), normalizedEmail, user.getStatus());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.USER_REGISTERED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "user",
+            user.getId().toString(),
+            "register",
+            "auth",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            "pending_verification"
+        ));
+        auditService.recordSafely(auditService.build(
+            AuditEventType.EMAIL_VERIFICATION_SENT,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "email_verification_token",
+            user.getId().toString(),
+            "send_verification",
+            "auth",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            null
+        ));
         return new ApiMessageResponse("Registration successful. Please check your email to verify your account before logging in.");
     }
 
@@ -142,13 +205,45 @@ public class AuthService {
 
         UserAccount user = userAccountRepository
                 .findByEmailIgnoreCase(normalizedEmail)
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+                .orElse(null);
+
+        if(user == null) {
+            auditService.recordSafely(auditService.build(
+                AuditEventType.USER_LOGIN_FAILED,
+                AuditOutcome.FAILURE,
+                AuditSeverity.MEDIUM,
+                null,
+                normalizedEmail,
+                "user",
+                normalizedEmail,
+                "login",
+                "auth",
+                clientContext.ipAddress(),
+                clientContext.userAgent(),
+                "unknown_email"
+            ));
+            throw new UnauthorizedException("Invalid email or password");
+        }
 
         validateAccountState(user);
 
-        if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {   
             failedLoginAttemptService.registerFailedAttempt(user.getId());
             LOG.warn("Login failed due to invalid password userId={} email={}", user.getId(), normalizedEmail);
+            auditService.recordSafely(auditService.build(
+                AuditEventType.USER_LOGIN_FAILED,
+                AuditOutcome.FAILURE,
+                AuditSeverity.MEDIUM,
+                user.getId(),
+                user.getEmail(),
+                "user",
+                user.getId().toString(),
+                "login",
+                "auth",
+                clientContext.ipAddress(),
+                clientContext.userAgent(),
+                "invalid_password"
+            ));
             throw new UnauthorizedException("Invalid email or password");
         }
 
@@ -156,6 +251,20 @@ public class AuthService {
         user.setLockedUntil(null);
         userAccountRepository.save(user);
         LOG.info("Login successful userId={} email={}", user.getId(), normalizedEmail);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.USER_LOGIN_SUCCEEDED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "user",
+            user.getId().toString(),
+            "login",
+            "auth",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            null
+        ));
 
         return generateTokenPair(user, clientContext);
     }
@@ -200,6 +309,20 @@ public class AuthService {
         activeSession.setLastSeenAt(now);
         userSessionRepository.save(activeSession);
         LOG.info("Refresh successful, old session rotated sessionId={} userId={}", activeSession.getId(), user.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.TOKEN_REFRESH_SUCCEEDED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "session",
+            activeSession.getId().toString(),
+            "refresh",
+            "auth",
+            clientContext.ipAddress(),
+            clientContext.userAgent(),
+            "session_rotated"
+        ));
         return generateTokenPair(user, clientContext);
     }
 
@@ -207,6 +330,7 @@ public class AuthService {
     public ApiMessageResponse logout(RefreshTokenRequest request) {
         RefreshTokenClaims claims = jwtTokenService.parseRefreshToken(request.getRefreshToken());
         LOG.info("Logout requested userId={}", claims.userId());
+        UserAccount user = userAccountRepository.findById(claims.userId()).orElse(null);
         userSessionRepository
                 .findByRefreshTokenJti(claims.jti())
                 .ifPresent(session -> {
@@ -214,6 +338,20 @@ public class AuthService {
                     session.setRevokeReason("LOGOUT");
                     userSessionRepository.save(session);
                 });
+        auditService.recordSafely(auditService.build(
+            AuditEventType.USER_LOGOUT,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            claims.userId(),
+            user == null ? null : user.getEmail(),
+            "session",
+            claims.jti(),
+            "logout",
+            "auth",
+            null,
+            null,
+            null
+        ));
         return new ApiMessageResponse("Logged out successfully");
     }
 
@@ -232,6 +370,20 @@ public class AuthService {
             userSessionRepository.save(session);
         }
         LOG.info("Logout-all completed userId={} newTokenVersion={}", user.getId(), user.getTokenVersion());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.USER_LOGOUT_ALL,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "user",
+            user.getId().toString(),
+            "logout_all",
+            "auth",
+            null,
+            null,
+            null
+        ));
 
         return new ApiMessageResponse("Logged out from all devices");
     }
@@ -278,6 +430,20 @@ public class AuthService {
         session.setLastSeenAt(now);
         userSessionRepository.save(session);
         LOG.info("Session revoked targetSessionId={} userId={}", session.getId(), user.getId());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.SESSION_REVOKED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "session",
+            session.getId().toString(),
+            "revoke_session",
+            "auth",
+            null,
+            null,
+            "manual_revoke"
+        ));
         return new ApiMessageResponse("Session revoked successfully");
     }
 
@@ -311,6 +477,20 @@ public class AuthService {
         passwordResetTokenRepository.save(resetTokenEntity);
         resetPasswordEmailService.sendPasswordResetEmail(user.getEmail(), resetToken);
         LOG.info("Password reset token issued userId={} email={}", user.getId(), normalizedEmail);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PASSWORD_RESET_REQUESTED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            user.getId(),
+            user.getEmail(),
+            "password_reset_token",
+            resetTokenEntity.getId().toString(),
+            "request_password_reset",
+            "auth",
+            null,
+            null,
+            null
+        ));
         return new ApiMessageResponse("Password reset link sent to email");
     }
 
@@ -356,6 +536,20 @@ public class AuthService {
             userSessionRepository.save(session);
         }
         LOG.info("Password reset completed userId={} tokenVersion={}", user.getId(), user.getTokenVersion());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PASSWORD_RESET_COMPLETED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            user.getId(),
+            user.getEmail(),
+            "user",
+            user.getId().toString(),
+            "reset_password",
+            "auth",
+            null,
+            null,
+            "sessions_revoked"
+        ));
 
         return new ApiMessageResponse("Password has been reset successfully");
     }
@@ -383,6 +577,20 @@ public class AuthService {
         String verificationToken = issueEmailVerificationToken(user);
         verificationEmailService.sendVerificationEmail(user.getEmail(), verificationToken);
         LOG.info("Resend verification completed userId={} email={}", user.getId(), normalizedEmail);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.EMAIL_VERIFICATION_SENT,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "email_verification_token",
+            user.getId().toString(),
+            "resend_verification",
+            "auth",
+            null,
+            null,
+            null
+        ));
         return new ApiMessageResponse("Verification email sent");
     }
 
@@ -418,6 +626,20 @@ public class AuthService {
         tokenEntity.setVerifiedAt(Instant.now());
         emailVerificationTokenRepository.save(tokenEntity);
         LOG.info("Email verified successfully userId={} email={}", user.getId(), user.getEmail());
+        auditService.recordSafely(auditService.build(
+            AuditEventType.EMAIL_VERIFIED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.LOW,
+            user.getId(),
+            user.getEmail(),
+            "user",
+            user.getId().toString(),
+            "verify_email",
+            "auth",
+            null,
+            null,
+            null
+        ));
 
         return new ApiMessageResponse("Email verified successfully");
     }

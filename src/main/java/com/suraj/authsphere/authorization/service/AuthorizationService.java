@@ -4,8 +4,6 @@ import com.suraj.authsphere.authorization.domain.Permission;
 import com.suraj.authsphere.authorization.domain.Role;
 import com.suraj.authsphere.authorization.domain.RolePermission;
 import com.suraj.authsphere.authorization.domain.UserRole;
-import com.suraj.authsphere.authorization.dto.AssignPermissionRequest;
-import com.suraj.authsphere.authorization.dto.AssignRoleRequest;
 import com.suraj.authsphere.authorization.dto.CreatePermissionRequest;
 import com.suraj.authsphere.authorization.dto.CreateRoleRequest;
 import com.suraj.authsphere.authorization.dto.PermissionResponse;
@@ -15,6 +13,10 @@ import com.suraj.authsphere.authorization.repository.PermissionRepository;
 import com.suraj.authsphere.authorization.repository.RolePermissionRepository;
 import com.suraj.authsphere.authorization.repository.RoleRepository;
 import com.suraj.authsphere.authorization.repository.UserRoleRepository;
+import com.suraj.authsphere.audit.domain.AuditEventType;
+import com.suraj.authsphere.audit.domain.AuditOutcome;
+import com.suraj.authsphere.audit.domain.AuditSeverity;
+import com.suraj.authsphere.audit.service.AuditService;
 import com.suraj.authsphere.common.exception.BadRequestException;
 import java.util.List;
 import java.util.UUID;
@@ -28,17 +30,20 @@ public class AuthorizationService {
     private final PermissionRepository permissionRepository;
     private final UserRoleRepository userRoleRepository;
     private final RolePermissionRepository rolePermissionRepository;
+    private final AuditService auditService;
 
     public AuthorizationService(
         RoleRepository roleRepository,
         PermissionRepository permissionRepository,
         UserRoleRepository userRoleRepository,
-        RolePermissionRepository rolePermissionRepository
+        RolePermissionRepository rolePermissionRepository,
+        AuditService auditService
     ) {
         this.roleRepository = roleRepository;
         this.permissionRepository = permissionRepository;
         this.userRoleRepository = userRoleRepository;
         this.rolePermissionRepository = rolePermissionRepository;
+        this.auditService = auditService;
     }
 
     // ===================== Role Management =====================
@@ -56,6 +61,20 @@ public class AuthorizationService {
         role.setSystemRole(false);
 
         Role saved = roleRepository.save(role);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.ROLE_CREATED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            null,
+            null,
+            "role",
+            saved.getId().toString(),
+            "create_role",
+            "authorization",
+            null,
+            null,
+            "role_name=" + saved.getName()
+        ));
         return toRoleResponse(saved, List.of());
     }
 
@@ -94,6 +113,20 @@ public class AuthorizationService {
         role.setName(request.name());
         role.setDescription(request.description());
         Role saved = roleRepository.save(role);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.ROLE_UPDATED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            null,
+            null,
+            "role",
+            saved.getId().toString(),
+            "update_role",
+            "authorization",
+            null,
+            null,
+            "role_name=" + saved.getName()
+        ));
 
         List<PermissionResponse> permissions = getPermissionsForRole(roleId);
         return toRoleResponse(saved, permissions);
@@ -110,6 +143,20 @@ public class AuthorizationService {
         }
 
         roleRepository.delete(role);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.ROLE_DELETED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "role",
+            role.getId().toString(),
+            "delete_role",
+            "authorization",
+            null,
+            null,
+            "role_name=" + role.getName()
+        ));
     }
 
     // ===================== Permission Management =====================
@@ -128,6 +175,20 @@ public class AuthorizationService {
         permission.setAction(request.action());
 
         Permission saved = permissionRepository.save(permission);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PERMISSION_CREATED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            null,
+            null,
+            "permission",
+            saved.getId().toString(),
+            "create_permission",
+            "authorization",
+            null,
+            null,
+            "code=" + saved.getCode()
+        ));
         return toPermissionResponse(saved);
     }
 
@@ -160,6 +221,20 @@ public class AuthorizationService {
         permission.setAction(request.action());
 
         Permission saved = permissionRepository.save(permission);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PERMISSION_UPDATED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.MEDIUM,
+            null,
+            null,
+            "permission",
+            saved.getId().toString(),
+            "update_permission",
+            "authorization",
+            null,
+            null,
+            "code=" + saved.getCode()
+        ));
         return toPermissionResponse(saved);
     }
 
@@ -169,6 +244,20 @@ public class AuthorizationService {
             .findById(permissionId)
             .orElseThrow(() -> new BadRequestException("Permission not found"));
         permissionRepository.delete(permission);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PERMISSION_DELETED,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "permission",
+            permission.getId().toString(),
+            "delete_permission",
+            "authorization",
+            null,
+            null,
+            "code=" + permission.getCode()
+        ));
     }
 
     // ===================== Role Assignment =====================
@@ -189,6 +278,20 @@ public class AuthorizationService {
         userRole.setRoleId(roleId);
 
         userRoleRepository.save(userRole);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.ROLE_ASSIGNED_TO_USER,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "user_role",
+            userRole.getId().toString(),
+            "assign_role",
+            "authorization",
+            null,
+            null,
+            "userId=" + userId + ",roleId=" + roleId
+        ));
     }
 
     @Transactional
@@ -197,6 +300,20 @@ public class AuthorizationService {
         if (removed == 0) {
             throw new BadRequestException("User does not have this role");
         }
+        auditService.recordSafely(auditService.build(
+            AuditEventType.ROLE_REMOVED_FROM_USER,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "user_role",
+            userId + ":" + roleId,
+            "remove_role",
+            "authorization",
+            null,
+            null,
+            "userId=" + userId + ",roleId=" + roleId
+        ));
     }
 
     // ===================== Permission Assignment =====================
@@ -221,6 +338,20 @@ public class AuthorizationService {
         rolePermission.setPermissionId(permissionId);
 
         rolePermissionRepository.save(rolePermission);
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PERMISSION_ASSIGNED_TO_ROLE,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "role_permission",
+            rolePermission.getId().toString(),
+            "assign_permission",
+            "authorization",
+            null,
+            null,
+            "roleId=" + roleId + ",permissionId=" + permissionId
+        ));
     }
 
     @Transactional
@@ -229,6 +360,20 @@ public class AuthorizationService {
         if (removed == 0) {
             throw new BadRequestException("Role does not have this permission");
         }
+        auditService.recordSafely(auditService.build(
+            AuditEventType.PERMISSION_REMOVED_FROM_ROLE,
+            AuditOutcome.SUCCESS,
+            AuditSeverity.HIGH,
+            null,
+            null,
+            "role_permission",
+            roleId + ":" + permissionId,
+            "remove_permission",
+            "authorization",
+            null,
+            null,
+            "roleId=" + roleId + ",permissionId=" + permissionId
+        ));
     }
 
     // ===================== Authorization Checks =====================
