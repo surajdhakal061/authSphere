@@ -27,7 +27,7 @@ public class ResetPasswordEmailService {
     public void sendPasswordResetEmail(String recipientEmail, String token) {
         String resetUrl = buildResetUrl(token);
 
-        if (!emailProperties.enabled()) {
+        if (!emailProperties.isEnabled()) {
             LOG.info("Email sending disabled. Password reset link for {} -> {}", recipientEmail, resetUrl);
             return;
         }
@@ -38,7 +38,7 @@ public class ResetPasswordEmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(emailProperties.from());
+            message.setFrom(emailProperties.getFrom());
             message.setTo(recipientEmail);
             message.setSubject("Reset your AuthSphere password");
             message.setText(buildMessageBody(resetUrl, token));
@@ -50,7 +50,7 @@ public class ResetPasswordEmailService {
 
     private String buildResetUrl(String token) {
         String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
-        return emailProperties.resetBaseUrl() + "?token=" + encodedToken;
+        return emailProperties.getResetBaseUrl() + "?token=" + encodedToken;
     }
 
     private String buildMessageBody(String resetUrl, String token) {

@@ -26,7 +26,7 @@ public class VerificationEmailService {
     public void sendVerificationEmail(String recipientEmail, String token) {
         String verificationUrl = buildVerificationUrl(token);
 
-        if (!emailProperties.enabled()) {
+        if (!emailProperties.isEnabled()) {
             log.info("Email sending disabled. Verification link for {} -> {}", recipientEmail, verificationUrl);
             return;
         }
@@ -37,7 +37,7 @@ public class VerificationEmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(emailProperties.from());
+            message.setFrom(emailProperties.getFrom());
             message.setTo(recipientEmail);
             message.setSubject("Verify your AuthSphere account");
             message.setText(buildMessageBody(verificationUrl));
@@ -49,7 +49,7 @@ public class VerificationEmailService {
 
     private String buildVerificationUrl(String token) {
         String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
-        return emailProperties.verificationBaseUrl() + "?token=" + encodedToken;
+        return emailProperties.getVerificationBaseUrl() + "?token=" + encodedToken;
     }
 
     private String buildMessageBody(String verificationUrl) {
