@@ -1,4 +1,4 @@
-FROM gradle:8.5-jdk21
+FROM gradle:9.4.0-jdk21-ubi10
 WORKDIR /app
 COPY . .
 RUN gradle bootJar --no-daemon --stacktrace
