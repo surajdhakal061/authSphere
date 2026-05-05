@@ -62,8 +62,6 @@ public class AuthorizationController {
         authorizationService.deleteRole(roleId);
     }
 
-    // ===================== Permission Management =====================
-
     @PostMapping("/permissions")
     @ResponseStatus(HttpStatus.CREATED)
     public PermissionResponse createPermission(@Valid @RequestBody CreatePermissionRequest request) {
@@ -94,8 +92,6 @@ public class AuthorizationController {
         authorizationService.deletePermission(permissionId);
     }
 
-    // ===================== Role Assignment =====================
-
     @PostMapping("/users/assign-role")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<ApiError> assignRoleToUser(@Valid @RequestBody AssignRoleRequest request) {
@@ -112,7 +108,6 @@ public class AuthorizationController {
         authorizationService.removeRoleFromUser(userId, roleId);
     }
 
-    // ===================== Permission Assignment =====================
 
     @PostMapping("/roles/assign-permission")
     @ResponseStatus(HttpStatus.CREATED)
@@ -130,7 +125,6 @@ public class AuthorizationController {
         authorizationService.removePermissionFromRole(roleId, permissionId);
     }
 
-    // ===================== Authorization Checks =====================
 
     @GetMapping("/users/{userId}/permissions")
     public UserPermissionsResponse getUserPermissions(@PathVariable UUID userId) {
