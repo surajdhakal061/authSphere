@@ -1,14 +1,6 @@
-# Build stage
-FROM gradle:8.5-jdk21 AS build
+FROM gradle:8.5-jdk21
 WORKDIR /app
-COPY build.gradle settings.gradle ./
-RUN gradle dependencies --no-daemon
 COPY . .
-RUN gradle bootJar --no-daemon
-
-# Run stage
-FROM openjdk:21-ea-21-slim
-WORKDIR /app
-COPY --from=build /app/build/libs/*.jar authsphere.jar
+RUN gradle bootJar --no-daemon --stacktrace
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "authsphere.jar"]
+CMD ["java", "-jar", "build/libs/*.jar"]
